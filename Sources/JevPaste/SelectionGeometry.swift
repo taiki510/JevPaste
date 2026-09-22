@@ -17,7 +17,7 @@ enum SelectionGeometry {
     static let boundaryMarker = "｜"
 
     static func sourceLines(in text: String) -> [SourceLine] {
-        text.split(whereSeparator: \.isNewline)
+        text.split(whereSeparator: \Character.isNewline)
             .map(String.init)
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             .enumerated()
@@ -28,19 +28,47 @@ enum SelectionGeometry {
         var indices: [String.Index] = [line.startIndex]
         var cursor = line.startIndex
 
-        while cursor < line.endIndex {
-            let character = line[cursor]
-            let currentCategory = category(of: character)
-            var next = line.index(after: cursor)
-
-            if currentCategory == .asciiLetter || currentCategory == .asciiDigit || currentCategory == .whitespace {
-                while next < line.endIndex, category(of: line[next]) == currentCategory {
+        scan: while cursor < line.endIndex {
+            if line[cursor].isWhitespace {
+                var next = line.index(after: cursor)
+                while next < line.endIndex, line[next].isWhitespace {
                     next = line.index(after: next)
                 }
+                indices.append(next)
+                cursor = next
+                if indices.count >= maximumChoiceCount { break scan }
+                continue
             }
 
-            indices.append(next)
-            cursor = next
+            var tokenEnd = line.index(after: cursor)
+            while tokenEnd < line.endIndex, !line[tokenEnd].isWhitespace {
+                tokenEnd = line.index(after: tokenEnd)
+            }
+
+            let tokenHasNonASCII = line[cursor..<tokenEnd].contains { !isASCII($0) }
+            if tokenHasNonASCII {
+                while cursor < tokenEnd {
+                    cursor = line.index(after: cursor)
+                    indices.append(cursor)
+                    if indices.count >= maximumChoiceCount { break scan }
+                }
+                continue
+            }
+
+            while cursor < tokenEnd {
+                let currentCategory = category(of: line[cursor])
+                var next = line.index(after: cursor)
+
+                if currentCategory == .asciiLetter || currentCategory == .asciiDigit {
+                    while next < tokenEnd, category(of: line[next]) == currentCategory {
+                        next = line.index(after: next)
+                    }
+                }
+
+                indices.append(next)
+                cursor = next
+                if indices.count >= maximumChoiceCount { break scan }
+            }
         }
 
         return indices.enumerated().map { offset, index in
@@ -72,15 +100,10 @@ enum SelectionGeometry {
     private enum CharacterCategory: Equatable {
         case asciiLetter
         case asciiDigit
-        case whitespace
         case other
     }
 
     private static func category(of character: Character) -> CharacterCategory {
-        if character.isWhitespace {
-            return .whitespace
-        }
-
         guard character.unicodeScalars.count == 1,
               let scalar = character.unicodeScalars.first,
               scalar.isASCII
@@ -96,6 +119,10 @@ enum SelectionGeometry {
         default:
             return .other
         }
+    }
+
+    private static func isASCII(_ character: Character) -> Bool {
+        character.unicodeScalars.count == 1 && character.unicodeScalars.first?.isASCII == true
     }
 
     private static func preview(in line: String, at index: String.Index, radius: Int = 24) -> String {
