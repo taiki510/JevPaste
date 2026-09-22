@@ -73,6 +73,10 @@ See [SECURITY.md](SECURITY.md) for reporting and data-handling details.
 
 Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing.
 
+## Acknowledgements
+
+JevPaste was inspired by the Smart Paste concept demonstrated by [Jaste](https://jaste.app/). JevPaste is an independent open-source implementation and is not affiliated with or endorsed by Jaste.
+
 ## License
 
 [MIT License](LICENSE)
