@@ -40,11 +40,10 @@ JevPaste does not enumerate every possible substring of the selected line. Enume
 
 Instead, the app generates a linear set of lexical boundaries. The segmentation rules are deliberately mechanical:
 
-- consecutive ASCII letters form one unit
-- consecutive ASCII digits form one unit
 - consecutive whitespace characters form one unit
-- each ASCII punctuation or symbol character forms one unit
-- each non-ASCII grapheme cluster forms one unit
+- in an ASCII-only non-whitespace token, consecutive ASCII letters form one unit and consecutive ASCII digits form one unit
+- in an ASCII-only non-whitespace token, each ASCII punctuation or symbol character forms one unit
+- if a non-whitespace token contains any non-ASCII grapheme, every grapheme cluster in that token is one unit, including adjacent ASCII characters
 
 A boundary exists at the beginning and end of the line and between every adjacent unit.
 
@@ -81,7 +80,7 @@ Mixed text remains flexible without semantic parsing:
 becomes approximately:
 
 ```text
-｜郵｜便｜番｜号｜100｜-｜0001｜
+｜郵｜便｜番｜号｜1｜0｜0｜-｜0｜0｜0｜1｜
 ```
 
 and:
@@ -96,7 +95,7 @@ becomes:
 ｜Room｜305｜
 ```
 
-This keeps ordinary English text compact while preserving useful precision for Japanese, identifiers, punctuation-delimited values, and mixed-script text.
+This keeps ordinary English text compact while preserving character-level precision for Japanese and for half-width characters that are directly mixed into the same non-whitespace token.
 
 ## Boundary Presentation
 
