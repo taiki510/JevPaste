@@ -85,6 +85,7 @@ enum CandidateExtractor {
                     ))
                 }
 
+                var groupsForOrdinarySegment: [[Draft]] = []
                 let segments = [ordinarySegment] + structuralFragments(in: ordinarySegment)
                 for segment in segments {
                     for value in quotedValues(in: segment) {
@@ -103,7 +104,7 @@ enum CandidateExtractor {
                             sourceClipID: clip.id
                         )
                     }
-                    if !lexicalDrafts.isEmpty { candidateGroups.append(lexicalDrafts) }
+                    if !lexicalDrafts.isEmpty { groupsForOrdinarySegment.append(lexicalDrafts) }
 
                     let spanDrafts = spanCandidates(in: segment).map {
                         Draft(
@@ -113,8 +114,11 @@ enum CandidateExtractor {
                             sourceClipID: clip.id
                         )
                     }
-                    if !spanDrafts.isEmpty { candidateGroups.append(spanDrafts) }
+                    if !spanDrafts.isEmpty { groupsForOrdinarySegment.append(spanDrafts) }
                 }
+
+                let interleaved = roundRobin(groupsForOrdinarySegment)
+                if !interleaved.isEmpty { candidateGroups.append(interleaved) }
             }
         }
         if output.count >= limit { return output }
@@ -134,6 +138,20 @@ enum CandidateExtractor {
         return output
     }
 
+    private static func roundRobin(_ groups: [[Draft]]) -> [Draft] {
+        var result: [Draft] = []
+        var index = 0
+        while true {
+            var appendedAtThisIndex = false
+            for group in groups where index < group.count {
+                result.append(group[index])
+                appendedAtThisIndex = true
+            }
+            guard appendedAtThisIndex else { break }
+            index += 1
+        }
+        return result
+    }
     private static func explicitGroups(in text: String) -> [String] {
         backtickMatches(in: text).compactMap { match in
             guard let valueRange = Range(match.range(at: 1), in: text) else { return nil }
