@@ -64,6 +64,64 @@ import Testing
     #expect(values == ["Alpha", "Beta", "Gamma"])
 }
 
+@Test func lexicalCandidatesDoNotConsumeTheBudgetBeforeLaterLines() {
+    let text = "1 2 3\nFamily Name Johnson"
+    let values = CandidateExtractor.extract(from: [clip(text)], limit: 4).map(\.value)
+
+    #expect(values.contains("Johnson"))
+}
+
+@Test func lexicalCandidatesExcludeTrailingSentencePeriods() {
+    let text = "Contact jane@example.com. Call 090-1234-5678."
+    let values = CandidateExtractor.extract(from: [clip(text)]).map(\.value)
+
+    #expect(values.contains("jane@example.com"))
+    #expect(values.contains("090-1234-5678"))
+}
+
+@Test func longTrailingValuesAreAvailableBeyondEightTokens() {
+    let value = "123 Main Street Building Alpha Floor Two Unit Nine Tokyo Japan"
+    let values = CandidateExtractor.extract(from: [clip("Address \(value)")]).map(\.value)
+
+    #expect(value.split(separator: " ").count > 8)
+    #expect(values.contains(value))
+}
+
+@Test func embeddedTimeColonIsNotTreatedAsAKeyValueBoundary() {
+    let candidates = CandidateExtractor.extract(from: [clip("Meeting 09:30")])
+
+    #expect(!candidates.contains(where: { $0.value == "30" && $0.kind == .structuredValue }))
+    #expect(candidates.contains(where: { $0.value == "09:30" }))
+}
+
+@Test func explicitTimeKeyValueStillUsesTheLabelSeparator() {
+    let candidates = CandidateExtractor.extract(from: [clip("Time: 09:30")])
+
+    #expect(candidates.contains(where: { $0.value == "09:30" && $0.kind == .structuredValue }))
+}
+
+@Test func uriSchemeColonIsNotTreatedAsAKeyValueBoundary() {
+    let candidates = CandidateExtractor.extract(from: [clip("mailto:user@example.com")])
+
+    #expect(!candidates.contains(where: {
+        $0.value == "user@example.com" && $0.kind == .structuredValue
+    }))
+}
+
+@Test func bareIPv6IsNotTreatedAsAKeyValueBoundary() {
+    let text = "2001:db8::1"
+    let candidates = CandidateExtractor.extract(from: [clip(text)])
+
+    #expect(!candidates.contains(where: { $0.kind == .structuredValue }))
+    #expect(candidates.contains(where: { $0.value == text }))
+}
+
+@Test func compactColonKeyValueRemainsSupported() {
+    let candidates = CandidateExtractor.extract(from: [clip("Name:John")])
+
+    #expect(candidates.contains(where: { $0.value == "John" && $0.kind == .structuredValue }))
+}
+
 @Test func urlIsNotMisreadAsColonKeyValuePair() {
     let text = "https://example.com/account"
     let candidates = CandidateExtractor.extract(from: [clip(text)])
