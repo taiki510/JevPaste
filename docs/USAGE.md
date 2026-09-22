@@ -102,6 +102,22 @@ These labels are examples, not built-in field definitions. Use labels that descr
 - Use realistic labels rather than unlabeled lists of values.
 - Remove obsolete values instead of leaving conflicting alternatives in the profile.
 
+Multiword values are preserved. JevPaste does not assume that the first word is the label and everything after the first space is the value. For example, that assumption would incorrectly treat `Name Goto` as the value in `Family Name Goto`. Instead, whitespace-separated lines produce mechanical contiguous candidates, and Jev uses the complete original line to decide that `Goto` belongs in a family-name field.
+
+Likewise, `Organization Example Company` includes `Example Company` as an exact candidate. A colon provides a clearer boundary when you control the profile and the label itself contains spaces:
+
+```text
+Legal organization name: Example Company
+```
+
+You can also enclose an exact multiword value in backticks to group it explicitly:
+
+```text
+Legal organization name `Example Company`
+```
+
+The backticks are grouping marks and are not included in the candidate value. JevPaste also enumerates contiguous spans of up to five words on reasonably sized lines, so multiword values can remain selectable even when the copied source has no explicit delimiter. These spans are generated mechanically; Jev still decides which span belongs to the focused field.
+
 ### Exact Values and Variants
 
 JevPaste only inserts text that appears exactly in the source. It does not combine, generate, reformat, or transform values.

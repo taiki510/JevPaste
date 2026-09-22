@@ -13,9 +13,13 @@ enum CandidateExtractor {
     private static let quotedTextPattern = try! NSRegularExpression(
         pattern: #"[\"']([^\"']+)[\"']"#
     )
+    private static let backtickTextPattern = try! NSRegularExpression(
+        pattern: #"`([^`]+)`"#
+    )
     private static let lexicalTokenPattern = try! NSRegularExpression(
         pattern: #"[A-Za-z0-9][A-Za-z0-9@._+:/-]*"#
     )
+    private static let nonWhitespacePattern = try! NSRegularExpression(pattern: #"\S+"#)
 
     static func extract(from clips: [Clip], limit: Int = 150) -> [PasteCandidate] {
         var output: [PasteCandidate] = []
@@ -41,7 +45,7 @@ enum CandidateExtractor {
                         append(value: value, sourceApp: clip.sourceApp, sourceClipID: clip.id)
                     }
                 }
-                for value in rightHandValues(from: line) {
+                for value in explicitlyDelimitedValues(from: line) {
                     append(
                         value: value,
                         sourceApp: clip.sourceApp,
@@ -57,7 +61,7 @@ enum CandidateExtractor {
         return Array(output.prefix(limit))
     }
 
-    private static func rightHandValues(from line: String) -> [String] {
+    private static func explicitlyDelimitedValues(from line: String) -> [String] {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return [] }
 
@@ -88,17 +92,6 @@ enum CandidateExtractor {
             if !label.isEmpty, label.count <= 50, !value.isEmpty { return [value] }
         }
 
-        if let boundary = trimmed.firstIndex(where: \Character.isWhitespace) {
-            let label = String(trimmed[..<boundary]).trimmingCharacters(in: .whitespaces)
-            let value = String(trimmed[boundary...]).trimmingCharacters(in: .whitespaces)
-            let invalidLabelCharacters = CharacterSet(charactersIn: ".。!?！？,，、/\\")
-            if !label.isEmpty,
-               label.count <= 40,
-               label.rangeOfCharacter(from: invalidLabelCharacters) == nil,
-               !value.isEmpty {
-                return [value]
-            }
-        }
         return []
     }
 
@@ -119,13 +112,33 @@ enum CandidateExtractor {
     private static func syntacticValues(in text: String) -> [String] {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         var values = text.split(whereSeparator: \Character.isWhitespace).map(String.init)
+        values.append(contentsOf: contiguousTokenSpans(in: text))
 
-        for pattern in [quotedTextPattern, lexicalTokenPattern] {
+        for pattern in [quotedTextPattern, backtickTextPattern, lexicalTokenPattern] {
             values.append(contentsOf: pattern.matches(in: text, range: range).compactMap { match in
                 let matchRange = match.numberOfRanges > 1 ? match.range(at: 1) : match.range
                 guard let valueRange = Range(matchRange, in: text) else { return nil }
                 return String(text[valueRange])
             })
+        }
+        return values
+    }
+
+    private static func contiguousTokenSpans(in text: String) -> [String] {
+        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        let tokenRanges = nonWhitespacePattern.matches(in: text, range: fullRange).compactMap {
+            Range($0.range, in: text)
+        }
+        guard (2...12).contains(tokenRanges.count) else { return [] }
+
+        var values: [String] = []
+        let maximumWords = min(5, tokenRanges.count)
+        for wordCount in 2...maximumWords {
+            for start in 0...(tokenRanges.count - wordCount) {
+                let end = start + wordCount - 1
+                let span = tokenRanges[start].lowerBound..<tokenRanges[end].upperBound
+                values.append(String(text[span]))
+            }
         }
         return values
     }

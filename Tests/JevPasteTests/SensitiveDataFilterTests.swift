@@ -75,6 +75,16 @@ import Testing
     #expect(!candidates.contains(where: { $0.value == "山田 太郎" }))
 }
 
+@Test func multiwordValuesRemainAvailableAsExactCandidates() {
+    let text = "Family Name Goto\nLegal organization name Example Company\nAccount owner `Jane Mary Doe`"
+    let candidates = CandidateExtractor.extract(from: [clip(text)])
+
+    #expect(candidates.contains(where: { $0.value == "Goto" }))
+    #expect(candidates.contains(where: { $0.value == "Example Company" }))
+    #expect(candidates.contains(where: { $0.value == "Jane Mary Doe" }))
+    #expect(candidates.allSatisfy { text.contains($0.value) })
+}
+
 private func clip(_ text: String) -> Clip {
     Clip(id: UUID(), text: text, sourceApp: "Test", createdAt: Date())
 }
