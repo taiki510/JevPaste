@@ -144,7 +144,7 @@ A Smart Paste operation sends the focused field context and the bounded active s
 
 For multi-line input, the first request chooses among the non-empty source lines, the second chooses the start boundary, and the third receives that fixed start position and chooses the end boundary from later positions only. For a one-line source, line selection is skipped: the first request combines the explicit match/no-match decision with start-boundary selection, and the second chooses the dependent end boundary.
 
-Each question reserves `no_match` as a choice. The current implementation allows at most 255 choices per question, so at most 254 real line or boundary choices can be sent. Inputs over that limit are rejected instead of being semantically shortened or partially enumerated.
+Each question reserves `no_match` as a choice. If Jev explicitly selects `no_match`, JevPaste stops without inserting anything. A concrete choice is not rejected solely because its reported confidence is low. The current implementation allows at most 255 choices per question, so at most 254 real line or boundary choices can be sent. Inputs over that limit are rejected instead of being semantically shortened or partially enumerated.
 
 Only one source is used per operation. `Command-J` uses the current clipboard; `Command-Shift-J` uses the saved profile. Older clipboard history is never included.
 
@@ -172,7 +172,7 @@ Also confirm that the complete desired value occurs contiguously on one source l
 
 ### Jev Reports No Match
 
-Confirm that the exact desired value exists on one line of the active source. For profile use, add a clearer label or an explicit value variant. JevPaste deliberately refuses to invent or combine missing values.
+When Jev explicitly selects `no_match`, JevPaste leaves the field unchanged and does not show a modal error dialog. Confirm that the exact desired value exists on one line of the active source. For profile use, add a clearer label or an explicit value variant. JevPaste deliberately refuses to invent or combine missing values.
 
 ### The Source Is Too Complex
 

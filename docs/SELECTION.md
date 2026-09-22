@@ -114,7 +114,7 @@ The end-boundary instructions include the fixed start offset and its marked prev
 
 For a one-line source, the start-boundary request also includes `line_match`, which explicitly asks whether that line contains any complete exact value appropriate for the focused field. This preserves the no-match decision while avoiding a separate line-selection request.
 
-Each returned decision must independently meet the configured confidence threshold. The local app also verifies that the returned end boundary is after the already accepted start boundary.
+An explicit `no_match` choice is authoritative at every semantic selection step and stops the operation. When Jev returns a concrete line or boundary choice, its reported confidence is retained in the response but is not used as a separate rejection threshold. The local app still validates choice IDs and verifies that the returned end boundary is after the already accepted start boundary.
 
 ## Exact Source Preservation
 

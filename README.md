@@ -16,6 +16,7 @@ This is an independent open-source project. It is not an official Jaste or TypeS
 - Sends the complete bounded source text and focused field context to Jev
 - Uses Jev, rather than local domain rules, to decide which line and text range match the field
 - Inserts only an exact contiguous substring that already exists on one source line
+- Treats an explicit Jev `no_match` as a no-op, while accepting concrete choices regardless of reported confidence
 - Keeps an encrypted local clipboard history
 - Stores the API key and saved profile in macOS Keychain
 - Refuses to operate in password, verification-code, and similar sensitive fields

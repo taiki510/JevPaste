@@ -102,7 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if !succeeded { self.showError(JevPasteError.insertionFailed) }
                 }
             case .failure(let error):
-                self.showError(error)
+                if shouldPresentSmartPasteError(error) {
+                    self.showError(error)
+                }
             }
         }
     }
@@ -342,4 +344,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
+}
+
+
+func shouldPresentSmartPasteError(_ error: Error) -> Bool {
+    guard let pasteError = error as? JevPasteError else { return true }
+    if case .noMatch = pasteError { return false }
+    return true
 }

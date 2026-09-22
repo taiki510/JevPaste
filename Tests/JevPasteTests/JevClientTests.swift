@@ -58,7 +58,7 @@ import Testing
         .allSatisfy { endQuestion.criteria[$0.id] != nil })
 }
 
-@Test func lineDecisionRejectsNoMatchLowConfidenceAndUnknownIDs() {
+@Test func lineDecisionKeepsNoMatchButAcceptsLowConfidenceChoice() {
     let client = JevClient()
     let lines = [
         SourceLine(id: "line_0", text: "Primary email alice@example.com"),
@@ -67,17 +67,22 @@ import Testing
 
     #expect(isNoMatch(client.lineResult(
         JevResponse(answers: [
-            "source_line": .init(choice: "no_match", confidence: 0.99),
+            "source_line": .init(choice: "no_match", confidence: 0.01),
         ]),
         lines: lines
     )))
 
-    #expect(isLowConfidence(client.lineResult(
+    let lowConfidenceChoice = client.lineResult(
         JevResponse(answers: [
-            "source_line": .init(choice: "line_1", confidence: 0.54),
+            "source_line": .init(choice: "line_1", confidence: 0.01),
         ]),
         lines: lines
-    )))
+    )
+    guard case .success(let selectedLine) = lowConfidenceChoice else {
+        Issue.record("Expected the concrete line choice to be accepted regardless of confidence")
+        return
+    }
+    #expect(selectedLine.id == "line_1")
 
     #expect(isInvalidResponse(client.lineResult(
         JevResponse(answers: [
@@ -93,7 +98,7 @@ import Testing
     let boundaries = SelectionGeometry.boundaries(in: line)
     let start = boundaries.first { $0.characterOffset == 9 }!.id
     let response = JevResponse(answers: [
-        "line_match": .init(choice: "no_match", confidence: 0.99),
+        "line_match": .init(choice: "no_match", confidence: 0.01),
         "start_boundary": .init(choice: start, confidence: 0.99),
     ])
 
@@ -106,14 +111,31 @@ import Testing
     #expect(isNoMatch(result))
 }
 
-@Test func boundaryDecisionsAcceptMinimumConfidenceIndividually() {
+@Test func startNoMatchRemainsAuthoritative() {
+    let client = JevClient()
+    let line = "Order ID ABC123"
+    let boundaries = SelectionGeometry.boundaries(in: line)
+    let response = JevResponse(answers: [
+        "start_boundary": .init(choice: "no_match", confidence: 0.01),
+    ])
+
+    let result = client.startBoundaryResult(
+        response,
+        boundaries: boundaries,
+        requireLineMatch: false
+    )
+
+    #expect(isNoMatch(result))
+}
+
+@Test func boundaryDecisionsAcceptConcreteChoicesRegardlessOfConfidence() {
     let client = JevClient()
     let line = "Order ID ABC123"
     let boundaries = SelectionGeometry.boundaries(in: line)
     let startID = boundaries.first { $0.characterOffset == 9 }!.id
     let startResponse = JevResponse(answers: [
-        "line_match": .init(choice: "match", confidence: 0.55),
-        "start_boundary": .init(choice: startID, confidence: 0.55),
+        "line_match": .init(choice: "match", confidence: 0.01),
+        "start_boundary": .init(choice: startID, confidence: 0.01),
     ])
 
     let startResult = client.startBoundaryResult(
@@ -122,12 +144,12 @@ import Testing
         requireLineMatch: true
     )
     guard case .success(let startBoundary) = startResult else {
-        Issue.record("Expected line-match and start-boundary decisions at 0.55 to be accepted")
+        Issue.record("Expected concrete line-match and start-boundary choices to ignore confidence")
         return
     }
 
     let endResponse = JevResponse(answers: [
-        "end_boundary": .init(choice: boundaries.last!.id, confidence: 0.55),
+        "end_boundary": .init(choice: boundaries.last!.id, confidence: nil),
     ])
     let endResult = client.endResult(
         endResponse,
@@ -137,10 +159,54 @@ import Testing
     )
 
     guard case .success(let value) = endResult else {
-        Issue.record("Expected the end-boundary decision at 0.55 to be accepted")
+        Issue.record("Expected the concrete end-boundary choice to ignore confidence")
         return
     }
     #expect(value == "ABC123")
+}
+
+@Test func endNoMatchRemainsAuthoritative() {
+    let client = JevClient()
+    let line = "Order ID ABC123"
+    let boundaries = SelectionGeometry.boundaries(in: line)
+    let start = boundaries.first { $0.characterOffset == 9 }!
+    let response = JevResponse(answers: [
+        "end_boundary": .init(choice: "no_match", confidence: 0.01),
+    ])
+
+    let result = client.endResult(
+        response,
+        in: line,
+        boundaries: boundaries,
+        startBoundary: start
+    )
+
+    #expect(isNoMatch(result))
+}
+
+@Test func noMatchIsSilentWhileOperationalErrorsRemainVisible() {
+    #expect(!shouldPresentSmartPasteError(JevPasteError.noMatch))
+    #expect(shouldPresentSmartPasteError(JevPasteError.emptySource))
+    #expect(shouldPresentSmartPasteError(JevPasteError.invalidResponse))
+    #expect(shouldPresentSmartPasteError(URLError(.notConnectedToInternet)))
+}
+
+@Test func emptyLocalSourceIsNotSemanticNoMatch() async {
+    let client = JevClient(sendHandler: { _, _, completion in
+        completion(.failure(JevPasteError.invalidResponse))
+    })
+
+    let result: Result<String, Error> = await withCheckedContinuation { continuation in
+        client.choose(
+            field: focusedField(),
+            clips: [],
+            apiKey: "test-key"
+        ) { result in
+            continuation.resume(returning: result)
+        }
+    }
+
+    #expect(isEmptySource(result))
 }
 
 @Test func endDecisionRejectsBoundaryAtOrBeforeSelectedStart() {
@@ -240,9 +306,10 @@ private func isNoMatch<T>(_ result: Result<T, Error>) -> Bool {
     }
 }
 
-private func isLowConfidence<T>(_ result: Result<T, Error>) -> Bool {
+
+private func isEmptySource<T>(_ result: Result<T, Error>) -> Bool {
     isPasteError(result) { error in
-        if case .lowConfidence = error { return true }
+        if case .emptySource = error { return true }
         return false
     }
 }
