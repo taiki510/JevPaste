@@ -62,7 +62,7 @@ Each non-empty line is checked for syntax that provides an explicit value bounda
 - alternating tab-separated key/value pairs
 - the first `:`, `：`, or `=` separator when it looks like a key/value line
 
-The URL form `https://...` is not treated as a colon-delimited key/value pair because the right-hand side begins with `//`.
+A colon is ignored as a structured boundary when it is clearly embedded inside another lexical value, including digit-to-digit time forms such as `09:30`, common URI schemes such as `https:` or `mailto:`, and bare IPv6 addresses. A real key/value form such as `Time: 09:30` still yields `09:30` as a structured value.
 
 Unlike the previous algorithm, ordinary whitespace is **not** treated as a key/value separator. There is no rule that says "everything after the first space is the value."
 
@@ -88,7 +88,7 @@ This stage exists mainly for values embedded directly in prose, for example:
 Contact yamada@example.com、mobile 090-1234-5678.
 ```
 
-It can recover `yamada@example.com` and `090-1234-5678` even when punctuation is attached without surrounding spaces.
+It can recover `yamada@example.com` and `090-1234-5678` even when punctuation is attached without surrounding spaces. Sentence-final periods are not absorbed into those lexical candidates, so `jane@example.com.` still exposes the exact substring `jane@example.com`.
 
 The lexical scan is supplemental; it is not the primary tokenizer and therefore does not impose ASCII-only behavior on names or other natural-language values.
 
@@ -118,14 +118,14 @@ contains the candidate `John   Smith`, not a synthesized `John Smith`.
 
 ### 6. Contiguous multi-token spans
 
-For each line or fragment, JevPaste enumerates contiguous spans up to eight tokens long. This keeps multi-word values available without generating arbitrary non-contiguous combinations.
+For each line or fragment, JevPaste enumerates two bounded classes of contiguous spans. Trailing spans are extended beyond eight tokens while the resulting exact substring remains within the 500-character candidate limit. General spans that may start at any token remain limited to eight tokens. This preserves long label/value tails such as postal addresses without allowing the arbitrary-span search to grow quadratically without bound.
 
 The per-fragment order is intentionally biased toward a common `label value` layout without declaring where the label ends:
 
 1. trailing one-token span
 2. trailing two-token span
 3. trailing three-token span
-4. and so on, up to eight tokens
+4. and so on while the trailing substring remains within 500 characters
 5. all contiguous one-token spans from left to right
 6. all contiguous two-token spans from left to right
 7. and so on, up to eight tokens
@@ -164,13 +164,13 @@ Full Name John Smith
 
 and the later contiguous-span pass also includes `John`, `Full Name`, `Name John`, and the other exact spans. Jev receives the complete original line and decides whether the focused field requires `John`, `Smith`, or `John Smith`.
 
-The eight-token span bound controls combinatorial growth. A longer complete line is also queued as a `structuralFragment` when its total length is within the per-candidate character limit, although it can still be omitted if the global candidate budget is exhausted first.
+The eight-token bound applies to arbitrary-start spans and controls combinatorial growth. Trailing spans are linear in the number of tokens and therefore may extend farther, but stop once they would exceed 500 characters. A complete line is also queued as a `structuralFragment` when its total length is within the per-candidate character limit, although it can still be omitted if the global candidate budget is exhausted first.
 
 ### 7. Round-robin allocation across fragments
 
-Candidate generation can produce more values than the request limit. To prevent an early long line from crowding out later lines, span candidates are not appended one fragment at a time.
+Candidate generation can produce more values than the request limit. To prevent an early long line from crowding out later lines, embedded lexical candidates and span candidates are not appended one fragment at a time.
 
-Instead, JevPaste stores the ordered candidate list for every line or structural fragment and consumes those lists in round-robin order:
+Instead, JevPaste stores separate ordered lexical and span groups for every line or structural fragment and consumes all of those groups in round-robin order. This means that a line containing many numbers, email-like tokens, or URLs cannot consume the entire global budget before a later line contributes its first span:
 
 ```text
 fragment 1 candidate 1
@@ -194,7 +194,8 @@ Current limits are:
 - source context: up to 12,000 characters
 - candidate value: up to 500 characters
 - candidate count: up to 150
-- contiguous token span: up to eight tokens
+- arbitrary-start contiguous token span: up to eight tokens
+- trailing token span: may exceed eight tokens while the exact substring remains within 500 characters
 
 These limits keep the request bounded while preserving the original source text as Jev's authoritative context.
 
