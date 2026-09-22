@@ -35,7 +35,13 @@ Email jane.doe@example.com
 Organization Example Company
 ```
 
-If the email field is focused, Jev can select `jane.doe@example.com`. If the phone field is focused next, the same clipboard source can be reused to select `2025550123`.
+If the email field is focused, Jev can select the email line and then the exact `jane.doe@example.com` range within it. If the full-name field is focused next, the same source can be reused and Jev can select `Jane Doe` without JevPaste needing a local rule for names.
+
+### Source layout
+
+Smart Paste is intentionally based on one selected source line per pasted value. The line may contain a label, punctuation, delimiters, prose, or other surrounding text; Jev selects the relevant range within that line.
+
+Values that span multiple source lines are not supported. For normal web-form use this keeps the interaction and failure modes simple. If you control the source, put each complete value that may be pasted on one line.
 
 ## Saved Profile Smart Paste
 
@@ -55,7 +61,7 @@ The profile is stored in macOS Keychain, separately from clipboard history. Open
 1. Focus the destination input field.
 2. Press `Command-Shift-J`.
 3. JevPaste sends the saved profile and the focused-field context to Jev.
-4. Jev selects an exact value from the profile and JevPaste inserts it.
+4. Jev selects the relevant line and exact range, and JevPaste inserts that unchanged source substring.
 
 The current clipboard is not used as the source for this shortcut. Profile Smart Paste does not replace the clipboard or add the profile to clipboard history.
 
@@ -63,7 +69,7 @@ The current clipboard is not used as the source for this shortcut. Profile Smart
 
 Jev makes the semantic decision, so the profile should provide enough context for Jev to distinguish similar values. The local app does not maintain a fixed list of profile fields.
 
-The most reliable format is one clearly labeled value per line:
+The recommended format is one clearly labeled, complete value per line:
 
 ```text
 Full name Jane Doe
@@ -94,35 +100,53 @@ These labels are examples, not built-in field definitions. Use labels that descr
 
 ### Recommended Practices
 
-- Put one logical value on each line.
+- Put each complete value that may be pasted on one line.
 - Give similar values distinct labels, such as `Phone (complete)` and `Phone (part 1)`.
 - Store every exact representation that a form may require.
-- Keep related fields near each other so their ordering provides additional context.
+- Keep related fields near each other so the full source gives Jev useful context.
 - Include both a complete address and its component fields when you regularly encounter both form styles.
 - Use realistic labels rather than unlabeled lists of values.
 - Remove obsolete values instead of leaving conflicting alternatives in the profile.
 
 ### Exact Values and Variants
 
-JevPaste only inserts text that appears exactly in the source. It does not combine, generate, reformat, or transform values.
+JevPaste only inserts a contiguous substring that already exists on the selected source line. It does not combine, generate, reformat, normalize, or transform values.
 
-For example, if a profile stores separate family and given names but does not contain a full-name value, JevPaste will not construct a full name. If forms require both hyphenated and unhyphenated postal codes, store both variants explicitly. The same principle applies to phone-number segments, phonetic spellings, address components, date formats, and other alternate representations.
+For example, if a profile stores separate family and given names but never contains the full name contiguously on one line, JevPaste will not construct a full name. If forms require both hyphenated and unhyphenated postal codes, store both variants explicitly. The same principle applies to phone-number segments, phonetic spellings, address components, date formats, and other alternate representations.
 
-### Other Supported Source Layouts
+## How Selection Works
 
-The app mechanically enumerates exact substrings from lines, whitespace-separated text, common delimiters, quoted pairs, and table-like text. Jev always receives the original complete source as the authoritative context.
+For a source with multiple non-empty lines, JevPaste first asks Jev which single line contains the value requested by the focused field. A one-line source skips that separate request, but the range-selection request still asks Jev explicitly whether the line contains an appropriate exact value.
 
-Colon-separated, tab-separated, CSV-like, and simple quoted key-value text can therefore work, but the one-value-per-line format is easier to edit and usually gives Jev clearer context.
+JevPaste then creates selectable boundaries within the chosen line without trying to understand what the text means. In ASCII-only non-whitespace text, consecutive letters and consecutive digits form runs while punctuation remains separately selectable. Whitespace forms runs. If a non-whitespace token contains any non-ASCII grapheme, every grapheme in that token—including adjacent ASCII characters—is selectable one by one. The boundaries between those units, plus the beginning and end of the line, become choices.
+
+For example:
+
+```text
+Name John Smith, 郵便番号100-0001
+```
+
+is mechanically segmented approximately as:
+
+```text
+｜Name｜ ｜John｜ ｜Smith｜,｜ ｜郵｜便｜番｜号｜1｜0｜0｜-｜0｜0｜0｜1｜
+```
+
+The full-width `｜` characters above are only explanatory separators. In the actual Jev criteria, JevPaste inserts a marker such as `[[JevPasteBoundary]]` and first ensures that the chosen marker does not occur anywhere in the selected source line. Jev first chooses the start boundary. JevPaste then sends that fixed start position in a second request whose end-boundary choices are limited to positions after the start. JevPaste slices the untouched source line between the two accepted positions.
+
+This design avoids local rules such as deciding whether a colon belongs to a URL, whether a hyphen belongs to a phone number, or how many words make up a name.
+
+See [Smart Paste Selection](SELECTION.md) for the precise algorithm and limits.
 
 ## What Is Sent to Jev
 
-Each Smart Paste request includes:
+A Smart Paste operation sends the focused field context and the bounded active source.
 
-- The focused field's available label, description, role, and application name
-- The current clipboard text or saved profile, limited to 12,000 characters
-- Up to 150 exact candidate substrings, each limited to 500 characters
+For multi-line input, the first request chooses among the non-empty source lines, the second chooses the start boundary, and the third receives that fixed start position and chooses the end boundary from later positions only. For a one-line source, line selection is skipped: the first request combines the explicit match/no-match decision with start-boundary selection, and the second chooses the dependent end boundary.
 
-Only one source is used per request. `Command-J` uses the current clipboard; `Command-Shift-J` uses the saved profile. Older clipboard history is never included.
+Each question reserves `no_match` as a choice. The current implementation allows at most 255 choices per question, so at most 254 real line or boundary choices can be sent. Inputs over that limit are rejected instead of being semantically shortened or partially enumerated.
+
+Only one source is used per operation. `Command-J` uses the current clipboard; `Command-Shift-J` uses the saved profile. Older clipboard history is never included.
 
 ## Insertion Behavior
 
@@ -144,13 +168,19 @@ Open System Settings, find JevPaste under **Privacy & Security > Accessibility**
 
 Keep the destination field focused while the request runs. Open diagnostics and inspect the latest focus and insertion results. Some custom web components may not expose enough Accessibility information for JevPaste to identify or verify the field.
 
+Also confirm that the complete desired value occurs contiguously on one source line. Multi-line values are intentionally unsupported.
+
 ### Jev Reports No Match
 
-Confirm that the exact desired value exists in the active source. For profile use, add a clearer label or an explicit value variant. JevPaste deliberately refuses to invent or combine missing values.
+Confirm that the exact desired value exists on one line of the active source. For profile use, add a clearer label or an explicit value variant. JevPaste deliberately refuses to invent or combine missing values.
+
+### The Source Is Too Complex
+
+The line-selection and boundary-selection questions each have a finite choice budget. If the source has too many non-empty lines or the selected line creates too many lexical boundaries, simplify the source or put the desired value on a shorter dedicated line.
 
 ### The Wrong Value Is Selected
 
-Make ambiguous labels more specific and remove outdated duplicates. Keep the complete source context rather than reducing the profile to an unlabeled list. Jev, rather than a local rule, is responsible for deciding which value matches the field.
+Make ambiguous labels more specific and remove outdated duplicates. Keep enough source context for Jev to distinguish similar values. Jev, rather than a local domain rule, is responsible for deciding which line and exact range match the field.
 
 ### The API Request Fails
 

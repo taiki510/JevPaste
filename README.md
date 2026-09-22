@@ -5,7 +5,7 @@
 
 JevPaste is a macOS menu bar app that asks Jev to select the value that best fits the currently focused input field from a block of copied text. It connects directly to TypeSafe's Jev API.
 
-For example, copy several contact fields at once, focus an email, phone, or name field, and press `Command-J`. Jev compares the complete copied text with the field context and inserts the matching value.
+For example, copy several contact fields at once, focus an email, phone, or name field, and press `Command-J`. Jev identifies the relevant source line, selects the exact range within that line, and JevPaste inserts that unchanged substring.
 
 This is an independent open-source project. It is not an official Jaste or TypeSafe product.
 
@@ -13,8 +13,9 @@ This is an independent open-source project. It is not an official Jaste or TypeS
 
 - `Command-J`: Smart Paste from the current clipboard
 - `Command-Shift-J`: Smart Paste from a profile stored in Keychain
-- Sends the complete source text, its ordering, and the focused field's labels and descriptions to Jev
-- Prevents combining, generating, or transforming values that do not appear in the source text
+- Sends the complete bounded source text and focused field context to Jev
+- Uses Jev, rather than local domain rules, to decide which line and text range match the field
+- Inserts only an exact contiguous substring that already exists on one source line
 - Keeps an encrypted local clipboard history
 - Stores the API key and saved profile in macOS Keychain
 - Refuses to operate in password, verification-code, and similar sensitive fields
@@ -55,16 +56,23 @@ The current app UI is in Japanese; the English labels above describe the corresp
 - Use `Command-Shift-J` when the source is your saved profile.
 - Keep the destination field focused until JevPaste finishes.
 - Reuse the same copied block across multiple fields without copying it again.
+- Keep each value that may be pasted on a single source line. Multi-line values are intentionally outside the Smart Paste selection model.
 
 See the [complete usage guide](docs/USAGE.md) for setup, profile-writing recommendations, examples, expected behavior, and troubleshooting.
 
 ## How It Works
 
-The local app does not classify copied data as phone numbers, names, addresses, or other domain-specific types. It sends the full source text and mechanically enumerated exact substrings to Jev. Jev decides which source value corresponds to the focused field.
+JevPaste deliberately avoids local semantic parsing. It does not classify text as names, addresses, phone numbers, URLs, or other domain-specific types.
+
+For a multi-line source, Jev first chooses the single line that contains the value for the focused field. For the selected line, JevPaste mechanically generates selectable text boundaries. Jev then chooses the start boundary. A following request receives that fixed start position and chooses only among later end boundaries. JevPaste then slices the original line at those exact positions and inserts the resulting substring without generating, joining, or normalizing text.
+
+Boundary generation is lexical rather than semantic. In ordinary ASCII-only text, consecutive ASCII letters and consecutive ASCII digits are grouped into runs, while punctuation remains separately selectable. Whitespace is grouped into runs. If a non-whitespace token contains any non-ASCII grapheme, every grapheme in that token—including adjacent ASCII characters—is selectable one by one. This keeps ordinary English lines compact while retaining fine-grained selection for Japanese and mixed-script text.
 
 For regular Smart Paste, only the clipboard contents present when `Command-J` is pressed are used. Older history entries are never included in the Jev request. The same copied text remains reusable until the clipboard changes.
 
 Profile Smart Paste uses the saved profile instead of the clipboard. The profile is separate from clipboard history and can be edited or deleted from the menu.
+
+See [Smart Paste Selection](docs/SELECTION.md) for the full selection algorithm, limits, and design rationale.
 
 ## Privacy and Security
 
@@ -74,7 +82,8 @@ Profile Smart Paste uses the saved profile instead of the clipboard. The profile
 - Clipboard history is encrypted with AES-GCM and limited to 200 local entries.
 - Images are neither recorded nor transmitted.
 - Private keys, common API-key formats, payment-card numbers, and similar values are excluded from history.
-- Request source text is limited to 12,000 characters and the candidate list to 150 entries.
+- Request source text is limited to 12,000 characters.
+- Each Jev choice question is capped at 255 choices, including `no_match`. Inputs that exceed the line or boundary budget are rejected rather than heuristically truncated.
 
 See [SECURITY.md](SECURITY.md) for reporting and data-handling details.
 
