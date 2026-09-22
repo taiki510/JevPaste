@@ -30,7 +30,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             let description: String
             switch candidate.kind {
             case .explicitGroup:
-                description = "Explicitly grouped exact substring"
+                description = "Source-author-marked complete candidate value"
             case .structuredValue:
                 description = "Structurally identified exact substring"
             case .tokenSpan:
@@ -65,7 +65,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             questions: [
                 "best_match": .init(
                     type: "choice",
-                    instructions: "Use clipboard_items as the authoritative context, including all surrounding text, layout, ordering, and relationships. Candidate generation is syntactic and does not classify names, addresses, organizations, or other domains. Choose the exact candidate that fully represents the value requested by focused_field. Exclude surrounding field labels, keys, punctuation, or unrelated text. An explicitly grouped candidate is a strong hint from the source author, but it must still fit the focused field semantically. Do not prefer a shorter candidate when it would omit part of the requested value. Choose no_match when no exact candidate is appropriate. Never combine candidates, generate new text, normalize whitespace, or transform a value.",
+                    instructions: "Use clipboard_items as the authoritative context, including all surrounding text, layout, ordering, and relationships. Candidate generation is syntactic and does not classify names, addresses, organizations, or other domains. Choose the exact candidate that fully represents the value requested by focused_field. Exclude surrounding field labels, keys, punctuation, or unrelated text. An explicitly grouped candidate was deliberately marked by the source author as one complete candidate value, but it must still fit the focused field semantically. Do not prefer a shorter candidate when it would omit part of the requested value. Choose no_match when no exact candidate is appropriate. Never combine candidates, generate new text, normalize whitespace, or transform a value.",
                     criteria: candidateCriteria.merging([
                         "no_match": "None of the saved values naturally and specifically answers this field."
                     ]) { current, _ in current }
