@@ -25,7 +25,6 @@ enum JevPasteError: LocalizedError {
     case emptyHistory
     case emptyProfile
     case noMatch
-    case lowConfidence
     case sourceTooComplex
     case invalidResponse
     case insertionFailed
@@ -40,7 +39,6 @@ enum JevPasteError: LocalizedError {
         case .emptyHistory: return "現在のクリップボードに利用できるテキストがありません。"
         case .emptyProfile: return "プロフィールが未登録です。メニューの「プロフィールを編集…」から登録してください。"
         case .noMatch: return "現在の入力欄に対応する値を、現在の入力元から特定できませんでした。"
-        case .lowConfidence: return "候補の確信度が低いため貼り付けませんでした。"
         case .sourceTooComplex: return "入力元の行数または選択境界が多すぎるためSmart Pasteを実行できません。"
         case .invalidResponse: return "Jev APIから解釈できない応答が返りました。"
         case .insertionFailed: return "入力欄は取得できましたが、テキストを入力できませんでした。診断画面を確認してください。"

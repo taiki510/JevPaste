@@ -8,7 +8,6 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
     ) -> Void
 
     private let endpoint = URL(string: "https://api.typesafe.ai/v1/systemone")!
-    private let minimumConfidence = 0.55
     private let sendHandler: SendHandler?
 
     private lazy var session: URLSession = {
@@ -133,9 +132,6 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         }
         guard answer.choice != "no_match" else {
             return .failure(JevPasteError.noMatch)
-        }
-        guard (answer.confidence ?? 0) >= minimumConfidence else {
-            return .failure(JevPasteError.lowConfidence)
         }
         guard let line = lines.first(where: { $0.id == answer.choice }) else {
             return .failure(JevPasteError.invalidResponse)
@@ -319,9 +315,6 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             guard lineMatch.choice == "match" else {
                 return .failure(JevPasteError.invalidResponse)
             }
-            guard (lineMatch.confidence ?? 0) >= minimumConfidence else {
-                return .failure(JevPasteError.lowConfidence)
-            }
         }
 
         guard let start = response.answers["start_boundary"] else {
@@ -329,9 +322,6 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         }
         guard start.choice != "no_match" else {
             return .failure(JevPasteError.noMatch)
-        }
-        guard (start.confidence ?? 0) >= minimumConfidence else {
-            return .failure(JevPasteError.lowConfidence)
         }
         guard let boundary = boundaries.first(where: { $0.id == start.choice }),
               let finalBoundary = boundaries.last,
@@ -353,9 +343,6 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         }
         guard end.choice != "no_match" else {
             return .failure(JevPasteError.noMatch)
-        }
-        guard (end.confidence ?? 0) >= minimumConfidence else {
-            return .failure(JevPasteError.lowConfidence)
         }
         guard let endBoundary = boundaries.first(where: {
             $0.id == end.choice && $0.index > startBoundary.index
