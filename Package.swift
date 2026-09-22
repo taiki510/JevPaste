@@ -7,8 +7,22 @@ let package = Package(
     products: [
         .executable(name: "JevPaste", targets: ["JevPaste"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-testing.git", from: "6.3.2"),
+    ],
     targets: [
         .executableTarget(name: "JevPaste"),
-        .testTarget(name: "JevPasteTests", dependencies: ["JevPaste"]),
+        .testTarget(
+            name: "JevPasteTests",
+            dependencies: [
+                "JevPaste",
+                .product(name: "Testing", package: "swift-testing"),
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L", "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                ]),
+            ]
+        ),
     ]
 )
