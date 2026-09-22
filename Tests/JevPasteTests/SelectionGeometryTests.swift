@@ -23,22 +23,7 @@ import Testing
     let line = "Room305 ABC123XYZ"
     let boundaries = SelectionGeometry.boundaries(in: line)
 
-    let roomStart = boundaries.first { $0.characterOffset == 0 }!.id
-    let roomEnd = boundaries.first { $0.characterOffset == 4 }!.id
-    let numberEnd = boundaries.first { $0.characterOffset == 7 }!.id
-
-    #expect(SelectionGeometry.exactSubstring(
-        in: line,
-        boundaries: boundaries,
-        startID: roomStart,
-        endID: roomEnd
-    ) == "Room")
-    #expect(SelectionGeometry.exactSubstring(
-        in: line,
-        boundaries: boundaries,
-        startID: roomEnd,
-        endID: numberEnd
-    ) == "305")
+    #expect(boundaries.map(\.characterOffset) == [0, 4, 7, 8, 11, 14, 17])
 }
 
 @Test func nonAsciiCharactersHavePerCharacterBoundaries() {
@@ -48,20 +33,22 @@ import Testing
     #expect(boundaries.map(\.characterOffset) == Array(0...6))
 }
 
-@Test func asciiPunctuationHasBoundariesOnBothSides() {
+@Test func asciiAdjacentToNonAsciiAlsoUsesPerCharacterBoundaries() {
+    let line = "郵便番号100-0001"
+    let boundaries = SelectionGeometry.boundaries(in: line)
+
+    #expect(boundaries.map(\.characterOffset) == Array(0...12))
+}
+
+@Test func ordinaryAsciiPunctuationHasBoundariesOnBothSides() {
     let line = "john.smith@example.com"
     let boundaries = SelectionGeometry.boundaries(in: line)
     let offsets = boundaries.map(\.characterOffset)
 
-    #expect(offsets.contains(4))
-    #expect(offsets.contains(5))
-    #expect(offsets.contains(10))
-    #expect(offsets.contains(11))
-    #expect(offsets.contains(18))
-    #expect(offsets.contains(19))
+    #expect(offsets == [0, 4, 5, 10, 11, 18, 19, 22])
 }
 
-@Test func japaneseAndAsciiTextCanBeSelectedWithoutSemanticParsing() {
+@Test func mixedTextStillAllowsSelectingTheWholeAsciiValue() {
     let line = "郵便番号100-0001"
     let boundaries = SelectionGeometry.boundaries(in: line)
     let start = boundaries.first { $0.characterOffset == 4 }!.id
@@ -82,6 +69,13 @@ import Testing
 
     #expect(boundary.preview == "Full Name ｜John Smith")
     #expect(!boundary.preview.contains("|"))
+}
+
+@Test func boundaryEnumerationStopsOnceTheChoiceBudgetIsKnownToBeExceeded() {
+    let line = String(repeating: "日", count: 1_000)
+    let boundaries = SelectionGeometry.boundaries(in: line)
+
+    #expect(boundaries.count == SelectionGeometry.maximumChoiceCount)
 }
 
 @Test func invalidOrEmptyRangesAreRejected() {
