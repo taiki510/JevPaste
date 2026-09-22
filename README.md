@@ -49,6 +49,15 @@ After the first launch, open the JevPaste menu bar item and complete the followi
 
 The current app UI is in Japanese; the English labels above describe the corresponding menu actions.
 
+## Usage
+
+- Use `Command-J` when the source is the current clipboard.
+- Use `Command-Shift-J` when the source is your saved profile.
+- Keep the destination field focused until JevPaste finishes.
+- Reuse the same copied block across multiple fields without copying it again.
+
+See the [complete usage guide](docs/USAGE.md) for setup, profile-writing recommendations, examples, expected behavior, and troubleshooting.
+
 ## How It Works
 
 The local app does not classify copied data as phone numbers, names, addresses, or other domain-specific types. It sends the full source text and mechanically enumerated exact substrings to Jev. Jev decides which source value corresponds to the focused field.
