@@ -104,6 +104,13 @@ import Testing
     #expect(values.contains("Johnson"))
 }
 
+@Test func delimiterHeavyLineDoesNotCrowdOutLaterLines() {
+    let text = "A1,B2,C3,D4,E5,F6\nFamily Name Johnson"
+    let values = CandidateExtractor.extract(from: [clip(text)], limit: 2).map(\.value)
+
+    #expect(values.contains("Johnson"))
+}
+
 @Test func lexicalCandidatesExcludeTrailingSentencePeriods() {
     let text = "Contact jane@example.com. Call 090-1234-5678."
     let values = CandidateExtractor.extract(from: [clip(text)]).map(\.value)
