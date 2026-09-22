@@ -24,6 +24,7 @@ enum JevPasteError: LocalizedError {
     case sensitiveField
     case emptyHistory
     case emptyProfile
+    case emptySource
     case noMatch
     case sourceTooComplex
     case invalidResponse
@@ -38,6 +39,7 @@ enum JevPasteError: LocalizedError {
         case .sensitiveField: return "機密情報を扱う可能性がある入力欄ではSmart Pasteを実行しません。"
         case .emptyHistory: return "現在のクリップボードに利用できるテキストがありません。"
         case .emptyProfile: return "プロフィールが未登録です。メニューの「プロフィールを編集…」から登録してください。"
+        case .emptySource: return "Smart Pasteの入力元に利用できるテキストがありません。"
         case .noMatch: return "現在の入力欄に対応する値を、現在の入力元から特定できませんでした。"
         case .sourceTooComplex: return "入力元の行数または選択境界が多すぎるためSmart Pasteを実行できません。"
         case .invalidResponse: return "Jev APIから解釈できない応答が返りました。"
