@@ -30,11 +30,11 @@ enum SelectionGeometry {
 
         while cursor < line.endIndex {
             let character = line[cursor]
-            let category = category(of: character)
+            let currentCategory = category(of: character)
             var next = line.index(after: cursor)
 
-            if category == .asciiLetter || category == .asciiDigit || category == .whitespace {
-                while next < line.endIndex, category(of: line[next]) == category {
+            if currentCategory == .asciiLetter || currentCategory == .asciiDigit || currentCategory == .whitespace {
+                while next < line.endIndex, category(of: line[next]) == currentCategory {
                     next = line.index(after: next)
                 }
             }
