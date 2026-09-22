@@ -15,7 +15,7 @@ This is an independent open-source project. It is not an official Jaste or TypeS
 - `Command-Shift-J`: Smart Paste from a profile stored in Keychain
 - Sends the complete source text, its ordering, and the focused field's labels and descriptions to Jev
 - Enumerates exact single-word and multi-word source spans so names, places, organizations, and addresses can remain intact
-- Supports optional backtick grouping for explicitly marking one value in controlled source text
+- Supports optional ASCII backtick grouping for explicitly marking one complete value in controlled source text
 - Prevents combining, generating, whitespace-normalizing, or transforming values that do not appear in the source text
 - Keeps an encrypted local clipboard history
 - Stores the API key and saved profile in macOS Keychain
@@ -57,7 +57,7 @@ The current app UI is in Japanese; the English labels above describe the corresp
 - Use `Command-Shift-J` when the source is your saved profile.
 - Keep the destination field focused until JevPaste finishes.
 - Reuse the same copied block across multiple fields without copying it again.
-- In a saved profile, wrap a value in backticks when you want to mark its exact boundaries explicitly, for example <code>Full name `Jane Doe`</code>.
+- In a saved profile, wrap a value in half-width ASCII backticks when you want to mark its exact boundaries explicitly, for example <code>Full name `Jane Doe`</code>.
 
 See the [complete usage guide](docs/USAGE.md) for setup, profile-writing recommendations, examples, expected behavior, and troubleshooting.
 
@@ -67,7 +67,7 @@ The local app does not classify copied data as phone numbers, names, addresses, 
 
 Whitespace is treated as a possible boundary, not as proof of a label/value split. For a line such as `Full Name John Smith`, JevPaste makes exact candidates including `John`, `Smith`, and `John Smith` available instead of assuming that everything after the first space is one value. Multi-word candidates are contiguous substrings of the original source, so their original whitespace is preserved.
 
-Matched backticks provide an optional stronger boundary hint. For example, <code>Full Name `John Smith`</code> explicitly contributes `John Smith` as a high-priority candidate while the original source remains available to Jev as context.
+A matched pair of half-width ASCII backticks defines an explicit candidate boundary. For example, <code>Full Name `John Smith`</code> contributes `John Smith` as one complete high-priority candidate. The backticks themselves are never candidates, the enclosed text is not separately tokenized into ordinary candidates, and ordinary candidates do not cross the grouped range. The original source, including the grouping syntax, still remains available to Jev as context. Only ASCII backtick U+0060 has this special meaning; the full-width character `｀` is treated as ordinary text.
 
 For regular Smart Paste, only the clipboard contents present when `Command-J` is pressed are used. Older history entries are never included in the Jev request. The same copied text remains reusable until the clipboard changes.
 
