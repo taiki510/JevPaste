@@ -26,7 +26,7 @@ enum CandidateExtractor {
     private static let maximumCandidateCharacters = 500
 
     private static let backtickPattern = try! NSRegularExpression(
-        pattern: #"`([^`]{1,500})`"#,
+        pattern: #"`([^`]*)`"#,
         options: [.dotMatchesLineSeparators]
     )
     private static let quotedPairPattern = try! NSRegularExpression(
@@ -75,9 +75,8 @@ enum CandidateExtractor {
 
         var candidateGroups: [[Draft]] = []
         for clip in clips {
-            let lines = clip.text.split(whereSeparator: \Character.isNewline).map(String.init)
-            for line in lines {
-                for value in structuredValues(from: line) {
+            for ordinarySegment in ordinarySegments(in: clip.text) {
+                for value in structuredValues(from: ordinarySegment) {
                     append(Draft(
                         value: value,
                         kind: .structuredValue,
@@ -86,7 +85,7 @@ enum CandidateExtractor {
                     ))
                 }
 
-                let segments = [line] + structuralFragments(in: line)
+                let segments = [ordinarySegment] + structuralFragments(in: ordinarySegment)
                 for segment in segments {
                     for value in quotedValues(in: segment) {
                         append(Draft(
@@ -136,13 +135,40 @@ enum CandidateExtractor {
     }
 
     private static func explicitGroups(in text: String) -> [String] {
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return backtickPattern.matches(in: text, range: range).compactMap { match in
+        backtickMatches(in: text).compactMap { match in
             guard let valueRange = Range(match.range(at: 1), in: text) else { return nil }
             return String(text[valueRange])
         }
     }
 
+    private static func backtickMatches(in text: String) -> [NSTextCheckingResult] {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return backtickPattern.matches(in: text, range: range)
+    }
+
+    private static func ordinarySegments(in text: String) -> [String] {
+        var segments: [String] = []
+
+        func appendLines(_ range: Range<String.Index>) {
+            segments.append(contentsOf: text[range]
+                .split(whereSeparator: \Character.isNewline)
+                .map(String.init))
+        }
+
+        var cursor = text.startIndex
+        for match in backtickMatches(in: text) {
+            guard let matchRange = Range(match.range, in: text) else { continue }
+            if cursor < matchRange.lowerBound {
+                appendLines(cursor..<matchRange.lowerBound)
+            }
+            cursor = matchRange.upperBound
+        }
+        if cursor < text.endIndex {
+            appendLines(cursor..<text.endIndex)
+        }
+
+        return segments
+    }
     private static func structuredValues(from line: String) -> [String] {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return [] }
