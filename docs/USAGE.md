@@ -118,7 +118,7 @@ For example, if a profile stores separate family and given names but never conta
 
 For a source with multiple non-empty lines, JevPaste first asks Jev which single line contains the value requested by the focused field. A one-line source skips this request.
 
-JevPaste then creates selectable boundaries within the chosen line without trying to understand what the text means. Consecutive ASCII letters, ASCII digits, and whitespace form runs. ASCII punctuation and symbols are separate units. Non-ASCII grapheme clusters are separate units. The boundaries between those units, plus the beginning and end of the line, become choices.
+JevPaste then creates selectable boundaries within the chosen line without trying to understand what the text means. In ASCII-only non-whitespace text, consecutive letters and consecutive digits form runs while punctuation remains separately selectable. Whitespace forms runs. If a non-whitespace token contains any non-ASCII grapheme, every grapheme in that token—including adjacent ASCII characters—is selectable one by one. The boundaries between those units, plus the beginning and end of the line, become choices.
 
 For example:
 
@@ -129,7 +129,7 @@ Name John Smith, 郵便番号100-0001
 is mechanically segmented approximately as:
 
 ```text
-｜Name｜ ｜John｜ ｜Smith｜,｜ ｜郵｜便｜番｜号｜100｜-｜0001｜
+｜Name｜ ｜John｜ ｜Smith｜,｜ ｜郵｜便｜番｜号｜1｜0｜0｜-｜0｜0｜0｜1｜
 ```
 
 The full-width `｜` characters above are explanatory boundary markers and are not inserted into the source. Jev chooses one start boundary and one end boundary in the same request. JevPaste then slices the untouched source line between those two positions.
