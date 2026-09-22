@@ -14,7 +14,7 @@ The candidate extractor is designed around five constraints:
 - **Preserve exact source text.** A selected value must already occur in the source. JevPaste must not construct a new full name, normalize whitespace, join fields from different lines, or otherwise synthesize a value.
 - **Support multi-word values.** Names such as `John Smith`, places such as `New York`, organizations such as `Acme Holdings LLC`, and street addresses must remain selectable as complete values.
 - **Avoid assuming that the first space separates a label and value.** In `Family Name Johnson`, the first space is inside the label, not the label/value boundary.
-- **Allow explicit author intent without requiring it.** Backticks can mark an exact value in a saved profile or controlled clipboard source, but ordinary `Command-J` input must continue to work without special markup.
+- **Allow explicit author intent without requiring it.** Matched half-width ASCII backticks can reserve one exact value as a single candidate in a saved profile or controlled clipboard source, but ordinary `Command-J` input must continue to work without special markup.
 - **Remain bounded.** Candidate enumeration must stay useful under the 150-candidate request limit instead of letting one long line consume the entire budget.
 
 ## Candidate kinds
@@ -23,7 +23,7 @@ Each candidate carries a syntactic kind. The kind does not determine what the te
 
 | Kind | Meaning | Example |
 | --- | --- | --- |
-| `explicitGroup` | Text explicitly enclosed in backticks | <code>Full Name `John Smith`</code> -> `John Smith` |
+| `explicitGroup` | Text explicitly enclosed in matched ASCII backticks | <code>Full Name `John Smith`</code> -> `John Smith` |
 | `structuredValue` | A value found through clear source syntax | `Full Name: John Smith` -> `John Smith` |
 | `tokenSpan` | A contiguous run of whitespace-delimited tokens | `Full Name John Smith` -> `John Smith` |
 | `structuralFragment` | A complete line or delimiter-separated fragment | `New York` -> `New York` |
@@ -32,16 +32,18 @@ When the same textual value is found more than once, only the first occurrence i
 
 ## Extraction pipeline
 
-### 1. Explicit backtick groups
+### 1. Explicit ASCII-backtick groups
 
-The extractor scans the complete source before line splitting. Text between a matched pair of single backticks is added first as an `explicitGroup` candidate.
+The extractor scans the complete source before ordinary line and token processing. Text between a matched pair of half-width ASCII backticks (U+0060) is added first as one `explicitGroup` candidate.
 
 ```text
 Full Name `John Michael Smith`
 City `New York`
 ```
 
-produces high-priority candidates `John Michael Smith` and `New York`.
+produces the complete high-priority candidates `John Michael Smith` and `New York`.
+
+Matched ASCII backticks are dedicated grouping syntax. The delimiters themselves are never candidate text, the enclosed range is not separately processed for ordinary quoted, lexical, token-span, or structural-fragment candidates, and no ordinary candidate is allowed to cross the grouped range. Thus <code>Full Name `John Smith`</code> exposes `John Smith` as the grouped value without also deriving `John`, `Smith`, or backtick-containing spans from inside that group.
 
 A matched group may span a newline:
 
@@ -50,9 +52,11 @@ Mailing Address `123 Main Street
 Apartment 4B`
 ```
 
-The backticks are grouping syntax and are not part of the candidate. Leading and trailing whitespace inside the group is trimmed, while whitespace inside the value is preserved.
+The enclosed two-line text is one explicit candidate. Leading and trailing whitespace inside the group is trimmed when the candidate is stored, while internal whitespace is preserved. A matched group still acts as a boundary if its enclosed value is empty or exceeds the 500-character candidate limit; in that case no explicit candidate is added, but the grouped range does not fall back into ordinary extraction.
 
-Backticks are optional. They are most useful in saved profiles, where the author controls the source text. Clipboard Smart Paste does not depend on them.
+Only the half-width ASCII backtick U+0060 is special. Visually similar full-width text such as `｀John Smith｀` is ordinary source text and receives no grouping semantics. Unmatched ASCII backticks likewise do not form a group.
+
+Grouping is optional. It is most useful in saved profiles, where the author controls the source text. Clipboard Smart Paste does not depend on it.
 
 ### 2. Clear structured values
 
@@ -166,24 +170,26 @@ and the later contiguous-span pass also includes `John`, `Full Name`, `Name John
 
 The eight-token bound applies to arbitrary-start spans and controls combinatorial growth. Trailing spans are linear in the number of tokens and therefore may extend farther, but stop once they would exceed 500 characters. A complete line is also queued as a `structuralFragment` when its total length is within the per-candidate character limit, although it can still be omitted if the global candidate budget is exhausted first.
 
-### 7. Round-robin allocation across fragments
+### 7. Round-robin allocation across lines and fragments
 
-Candidate generation can produce more values than the request limit. To prevent an early long line from crowding out later lines, embedded lexical candidates and span candidates are not appended one fragment at a time.
+Candidate generation can produce more values than the request limit. To prevent an early long or delimiter-heavy line from crowding out later lines, embedded lexical candidates and span candidates are allocated in two levels.
 
-Instead, JevPaste stores separate ordered lexical and span groups for every line or structural fragment and consumes all of those groups in round-robin order. This means that a line containing many numbers, email-like tokens, or URLs cannot consume the entire global budget before a later line contributes its first span:
+First, the candidate streams for an ordinary source segment and its delimiter-separated structural fragments are interleaved. Then those per-segment streams are consumed in round-robin order across the source. This prevents a line with many comma-, pipe-, tab-, or semicolon-separated fragments from receiving many candidate slots before a later line gets its first candidate.
+
+Conceptually:
 
 ```text
-fragment 1 candidate 1
-fragment 2 candidate 1
-fragment 3 candidate 1
+line 1 candidate 1
+line 2 candidate 1
+line 3 candidate 1
 ...
-fragment 1 candidate 2
-fragment 2 candidate 2
-fragment 3 candidate 2
+line 1 candidate 2
+line 2 candidate 2
+line 3 candidate 2
 ...
 ```
 
-Explicit groups and clear structured values are inserted before this round-robin phase because they contain stronger source-level boundary information.
+A matched ASCII-backtick group is not part of an ordinary segment; it is handled separately as an explicit candidate boundary. Explicit groups and clear structured values are inserted before the round-robin phase because they contain stronger source-level boundary information.
 
 ### 8. Deduplication and limits
 
@@ -212,7 +218,7 @@ The selection instruction asks Jev to choose the exact candidate that **fully re
 
 This replaces the earlier "prefer the smallest complete value" wording, which could create the wrong pressure when both `John` and `John Smith` are valid exact candidates but the focused field asks for a full name.
 
-Explicitly grouped candidates are described as a strong source-author hint, not an unconditional answer. Jev must still verify that the candidate semantically fits the focused field.
+Explicitly grouped candidates are described as values the source author deliberately marked as one complete candidate. That grouping fixes the candidate boundary, but it does not force a semantic match: Jev must still verify that the complete grouped value fits the focused field.
 
 ## Why not parse labels locally?
 
