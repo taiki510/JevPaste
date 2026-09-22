@@ -1,22 +1,22 @@
 # Security Policy
 
-## Supported version
+## Supported Version
 
 Security fixes are applied to the latest version on the `main` branch.
 
-## Reporting a vulnerability
+## Reporting a Vulnerability
 
-公開Issueへ機密情報や再現用の個人データを投稿しないでください。GitHubリポジトリのSecurityタブにあるPrivate vulnerability reportingから報告してください。
+Do not post sensitive information or personal reproduction data in a public issue. Use **Private vulnerability reporting** from the repository's **Security** tab.
 
-報告には、影響範囲、再現手順、確認したバージョンを含めてください。
+Include the affected version, impact, and reproducible steps in the report.
 
-## Data handling
+## Data Handling
 
-- Smart Pasteを実行した時だけTypeSafeのJev APIへ通信します。
-- `⌘J`では現在のクリップボード、`⌘⇧J`では保存プロフィールを送信します。
-- 過去のクリップボード履歴はJevの判定に使用しません。
-- APIキーと保存プロフィールはmacOS Keychainへ保存します。
-- 履歴はAES-GCMで暗号化し、`~/Library/Application Support/JevPaste/history.enc`へ保存します。
-- 外部通信先は`https://api.typesafe.ai/v1/systemone`に限定し、他ホストへのリダイレクトを拒否します。
+- JevPaste communicates with TypeSafe's Jev API only when the user invokes Smart Paste.
+- `Command-J` sends the current clipboard contents; `Command-Shift-J` sends the saved profile.
+- Older clipboard-history entries are not used in Jev requests.
+- The API key and saved profile are stored in macOS Keychain.
+- Clipboard history is encrypted with AES-GCM and stored at `~/Library/Application Support/JevPaste/history.enc`.
+- The only external endpoint is `https://api.typesafe.ai/v1/systemone`; redirects to other hosts are rejected.
 
-詳細な挙動はREADMEの「プライバシーとセキュリティ」を参照してください。
+See the **Privacy and Security** section of the README for additional details.

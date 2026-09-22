@@ -1,22 +1,22 @@
 # Contributing
 
-IssueやPull Requestを歓迎します。
+Issues and pull requests are welcome.
 
-## 開発環境
+## Development Environment
 
-- macOS 14以降
-- Xcode 16以降、または互換性のあるCommand Line Tools
+- macOS 14 or later
+- Xcode 16 or compatible Command Line Tools
 
-変更前後に次を実行してください。
+Run the following commands before and after making changes:
 
 ```sh
 swift test
 swift build
 ```
 
-## Pull Request
+## Pull Requests
 
-- 変更の目的と利用者への影響を説明してください。
-- 新しい判断ルールをローカル側へ追加する場合は、Jevへ必要な文脈を渡す方法で解決できないか先に検討してください。
-- APIキー、プロフィール、実際のクリップボード内容をテストやログへ含めないでください。
-- UIやホットキーを変更した場合は、READMEも更新してください。
+- Explain the purpose of the change and its user-facing impact.
+- Before adding local classification rules, consider whether the problem can be solved by providing Jev with better source context.
+- Never include API keys, saved profiles, or real clipboard contents in tests or logs.
+- Update the README when changing the UI, keyboard shortcuts, setup, or data handling.

@@ -3,33 +3,33 @@
 [![CI](https://github.com/taiki510/JevPaste/actions/workflows/ci.yml/badge.svg)](https://github.com/taiki510/JevPaste/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-JevPasteは、コピーしたまとまったテキストから現在の入力欄に合う値をJevに選ばせる、macOS用のSmart Pasteアプリです。TypeSafeのJev APIへ直接接続し、メニューバーから動作します。
+JevPaste is a macOS menu bar app that asks Jev to select the value that best fits the currently focused input field from a block of copied text. It connects directly to TypeSafe's Jev API.
 
-たとえば複数の連絡先項目を一度にコピーした後、メールアドレス欄、電話番号欄、氏名欄などでそれぞれ`⌘J`を押すと、Jevがコピー全文と入力欄の文脈を照合して対応する値を入力します。
+For example, copy several contact fields at once, focus an email, phone, or name field, and press `Command-J`. Jev compares the complete copied text with the field context and inserts the matching value.
 
-このプロジェクトは独立したオープンソースプロジェクトであり、JasteおよびTypeSafeの公式製品ではありません。
+This is an independent open-source project. It is not an official Jaste or TypeSafe product.
 
-## 主な機能
+## Features
 
-- `⌘J`: 現在のクリップボードからSmart Paste
-- `⌘⇧J`: Keychainに保存したプロフィールからSmart Paste
-- コピー全文、並び順、入力欄のラベルや説明をJevへ渡して判断
-- 原文にない値の結合・生成・変換を禁止
-- 暗号化されたローカル履歴
-- APIキーと保存プロフィールをmacOS Keychainへ保存
-- パスワードや認証コードなどの入力欄では処理を中止
-- 外部通信先をTypeSafeのJev APIに限定
+- `Command-J`: Smart Paste from the current clipboard
+- `Command-Shift-J`: Smart Paste from a profile stored in Keychain
+- Sends the complete source text, its ordering, and the focused field's labels and descriptions to Jev
+- Prevents combining, generating, or transforming values that do not appear in the source text
+- Keeps an encrypted local clipboard history
+- Stores the API key and saved profile in macOS Keychain
+- Refuses to operate in password, verification-code, and similar sensitive fields
+- Restricts external communication to TypeSafe's Jev API
 
-## 必要なもの
+## Requirements
 
-- macOS 14以降
-- Xcode 16以降、または互換性のあるCommand Line Tools
-- TypeSafe APIキー
-- アクセシビリティ権限
+- macOS 14 or later
+- Xcode 16 or compatible Command Line Tools
+- A TypeSafe API key
+- Accessibility permission
 
-入力監視権限はCarbonグローバルホットキーの通常動作には不要です。
+Input Monitoring permission is not required for the normal Carbon global-hotkey path.
 
-## ビルドと実行
+## Build and Run
 
 ```sh
 git clone https://github.com/taiki510/JevPaste.git
@@ -39,38 +39,40 @@ swift test
 open dist/JevPaste.app
 ```
 
-`package-app.sh`はリリースビルドを作成し、`dist/JevPaste.app`をad-hoc署名します。配布する場合は、自分のDeveloper IDによる署名とAppleの公証を行ってください。
+`package-app.sh` creates a release build, packages it as `dist/JevPaste.app`, and applies an ad-hoc signature. If you distribute the app, sign it with your own Developer ID and submit it for Apple notarization.
 
-初回起動後は、メニューバーのJevPasteアイコンから次の設定を行います。
+After the first launch, open the JevPaste menu bar item and complete the following setup:
 
-1. 「TypeSafe APIキーを設定…」でAPIキーを保存
-2. 「操作・入力監視権限を確認…」からアクセシビリティを許可
-3. 必要に応じて「プロフィールを編集…」で固定プロフィールを登録
+1. Select **Set TypeSafe API Key…** and save your API key.
+2. Select **Check Permissions…** and grant Accessibility permission.
+3. Optionally select **Edit Profile…** to save reusable profile text.
 
-## 動作の考え方
+The current app UI is in Japanese; the English labels above describe the corresponding menu actions.
 
-ローカル側は、コピー内容を電話番号、氏名、住所などの用途へ分類しません。コピー全文と、原文から機械的に列挙した部分文字列をJevへ渡し、現在の入力欄との対応判断をJevに任せます。
+## How It Works
 
-通常のSmart Pasteでは、`⌘J`を押した瞬間のクリップボードだけを判定対象にします。過去の履歴は送信しません。同じコピー内容は、次にコピーするまで何度でも利用できます。
+The local app does not classify copied data as phone numbers, names, addresses, or other domain-specific types. It sends the full source text and mechanically enumerated exact substrings to Jev. Jev decides which source value corresponds to the focused field.
 
-プロフィールSmart Pasteでは、クリップボードの代わりに保存プロフィールを利用します。プロフィールは通常の履歴と分離され、メニューから編集または削除できます。
+For regular Smart Paste, only the clipboard contents present when `Command-J` is pressed are used. Older history entries are never included in the Jev request. The same copied text remains reusable until the clipboard changes.
 
-## プライバシーとセキュリティ
+Profile Smart Paste uses the saved profile instead of the clipboard. The profile is separate from clipboard history and can be edited or deleted from the menu.
 
-- Smart Pasteを明示的に実行した時だけJev APIへ送信します。
-- アプリに組み込まれた外部通信先は`https://api.typesafe.ai/v1/systemone`のみです。
-- APIキーと保存プロフィールはKeychainに保存します。
-- 履歴はAES-GCMで暗号化し、最大200件をローカル保存します。
-- 画像は記録・送信しません。
-- 秘密鍵、代表的なAPIキー、カード番号などは履歴から除外します。
-- APIへ送る本文は先頭12,000文字、候補は最大150件に制限します。
+## Privacy and Security
 
-詳しくは[SECURITY.md](SECURITY.md)を参照してください。
+- Network communication occurs only when the user explicitly invokes Smart Paste.
+- The only external endpoint embedded in the app is `https://api.typesafe.ai/v1/systemone`.
+- The API key and saved profile are stored in macOS Keychain.
+- Clipboard history is encrypted with AES-GCM and limited to 200 local entries.
+- Images are neither recorded nor transmitted.
+- Private keys, common API-key formats, payment-card numbers, and similar values are excluded from history.
+- Request source text is limited to 12,000 characters and the candidate list to 150 entries.
 
-## コントリビューション
+See [SECURITY.md](SECURITY.md) for reporting and data-handling details.
 
-[CONTRIBUTING.md](CONTRIBUTING.md)を確認のうえ、IssueまたはPull Requestを送ってください。
+## Contributing
 
-## ライセンス
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing.
+
+## License
 
 [MIT License](LICENSE)
