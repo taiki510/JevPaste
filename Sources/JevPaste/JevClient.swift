@@ -2,6 +2,8 @@ import Foundation
 
 final class JevClient: NSObject, URLSessionTaskDelegate {
     private let endpoint = URL(string: "https://api.typesafe.ai/v1/systemone")!
+    private let minimumConfidence = 0.55
+
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
@@ -19,78 +21,240 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         apiKey: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
-        let contextClips = boundedContext(from: clips)
-        let clipboardIDs = Dictionary(uniqueKeysWithValues: contextClips.enumerated().map {
-            ($0.element.id, "clipboard_\($0.offset)")
-        })
-        let candidates = CandidateExtractor.extract(from: contextClips)
-        let indexedCandidates = candidates.enumerated().map { ("candidate_\($0.offset)", $0.element) }
-        let candidateCriteria = Dictionary(uniqueKeysWithValues: indexedCandidates.map { id, candidate in
-            let source = clipboardIDs[candidate.sourceClipID] ?? "unknown"
-            return (id, "Exact substring: \(candidate.value). Found in \(source).")
-        })
-        let stateCandidates = Dictionary(uniqueKeysWithValues: indexedCandidates.map { id, candidate in
-            (
-                id,
-                JevRequest.State.Candidate(
-                    value: candidate.value,
-                    clipboardItemID: clipboardIDs[candidate.sourceClipID] ?? "unknown"
-                )
+        guard let source = boundedContext(from: clips).first else {
+            finish(.failure(JevPasteError.noMatch), completion: completion)
+            return
+        }
+
+        let lines = SelectionGeometry.sourceLines(in: source.text)
+        guard !lines.isEmpty else {
+            finish(.failure(JevPasteError.noMatch), completion: completion)
+            return
+        }
+
+        if lines.count == 1 {
+            chooseRange(
+                in: lines[0],
+                source: source,
+                field: field,
+                apiKey: apiKey,
+                completion: completion
             )
+            return
+        }
+
+        guard lines.count + 1 <= SelectionGeometry.maximumChoiceCount else {
+            finish(.failure(JevPasteError.sourceTooComplex), completion: completion)
+            return
+        }
+
+        chooseLine(
+            from: lines,
+            source: source,
+            field: field,
+            apiKey: apiKey
+        ) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let line):
+                self.chooseRange(
+                    in: line,
+                    source: source,
+                    field: field,
+                    apiKey: apiKey,
+                    completion: completion
+                )
+            case .failure(let error):
+                self.finish(.failure(error), completion: completion)
+            }
+        }
+    }
+
+    private func chooseLine(
+        from lines: [SourceLine],
+        source: Clip,
+        field: FocusedFieldContext,
+        apiKey: String,
+        completion: @escaping (Result<SourceLine, Error>) -> Void
+    ) {
+        var criteria = Dictionary(uniqueKeysWithValues: lines.map {
+            ($0.id, "This exact source line: \($0.text)")
         })
-        let requestBody = JevRequest(
+        criteria["no_match"] = "No single source line contains an exact value appropriate for the focused field."
+
+        let request = JevRequest(
             model: "jev-latest",
-            state: .init(
-                focusedField: .init(label: field.label, role: field.role, app: field.app),
-                clipboardItems: contextClips.enumerated().map {
-                    .init(
-                        id: "clipboard_\($0.offset)",
-                        sourceApp: $0.element.sourceApp,
-                        content: $0.element.text
-                    )
-                },
-                candidates: stateCandidates
-            ),
+            state: state(field: field, source: source, selectedLine: nil),
             questions: [
-                "best_match": .init(
+                "source_line": .init(
                     type: "choice",
-                    instructions: "Use clipboard_items as the authoritative context, including all surrounding text, layout, ordering, and relationships. Candidate generation is purely syntactic and contains no semantic classification. Decide which exact candidate belongs in focused_field from the original context. Prefer the smallest complete value rather than text that still includes a field label or surrounding prose. Choose no_match when no exact candidate is appropriate. Never combine candidates, generate new text, or transform a value.",
-                    criteria: candidateCriteria.merging([
-                        "no_match": "None of the saved values naturally and specifically answers this field."
-                    ]) { current, _ in current }
+                    instructions: "Choose the single source line that contains the exact value that should be inserted into focused_field. Use the complete source text for context. Do not infer or construct a value across multiple lines. The selected line may contain labels, punctuation, or other surrounding text; a later step will select the exact range within it. Choose no_match when no single line contains an appropriate exact value.",
+                    criteria: criteria
                 )
             ]
         )
 
+        send(request, apiKey: apiKey) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let response):
+                guard let answer = response.answers["source_line"] else {
+                    completion(.failure(JevPasteError.invalidResponse))
+                    return
+                }
+                guard answer.choice != "no_match" else {
+                    completion(.failure(JevPasteError.noMatch))
+                    return
+                }
+                guard (answer.confidence ?? 0) >= self.minimumConfidence else {
+                    completion(.failure(JevPasteError.lowConfidence))
+                    return
+                }
+                guard let line = lines.first(where: { $0.id == answer.choice }) else {
+                    completion(.failure(JevPasteError.invalidResponse))
+                    return
+                }
+                completion(.success(line))
+            }
+        }
+    }
+
+    private func chooseRange(
+        in line: SourceLine,
+        source: Clip,
+        field: FocusedFieldContext,
+        apiKey: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let boundaries = SelectionGeometry.boundaries(in: line.text)
+        guard boundaries.count + 1 <= SelectionGeometry.maximumChoiceCount else {
+            finish(.failure(JevPasteError.sourceTooComplex), completion: completion)
+            return
+        }
+
+        var criteria = Dictionary(uniqueKeysWithValues: boundaries.map {
+            (
+                $0.id,
+                "Boundary at character offset \($0.characterOffset). The inserted full-width marker ｜ shows the boundary: \($0.preview)"
+            )
+        })
+        criteria["no_match"] = "No valid boundary can represent the requested exact value."
+
+        let request = JevRequest(
+            model: "jev-latest",
+            state: state(field: field, source: source, selectedLine: line.text),
+            questions: [
+                "start_boundary": .init(
+                    type: "choice",
+                    instructions: "The selected_line contains the value for focused_field. Choose the boundary immediately before the first character of the complete exact value. The full-width ｜ character shown in each criterion is an inserted display marker, not source text. Do not include a label or unrelated prefix unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if no boundary is appropriate.",
+                    criteria: criteria
+                ),
+                "end_boundary": .init(
+                    type: "choice",
+                    instructions: "The selected_line contains the value for focused_field. Choose the boundary immediately after the last character of the complete exact value. The full-width ｜ character shown in each criterion is an inserted display marker, not source text. Do not include unrelated suffix text or punctuation unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if no boundary is appropriate.",
+                    criteria: criteria
+                )
+            ]
+        )
+
+        send(request, apiKey: apiKey) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                self.finish(.failure(error), completion: completion)
+            case .success(let response):
+                guard let start = response.answers["start_boundary"],
+                      let end = response.answers["end_boundary"]
+                else {
+                    self.finish(.failure(JevPasteError.invalidResponse), completion: completion)
+                    return
+                }
+
+                guard start.choice != "no_match", end.choice != "no_match" else {
+                    self.finish(.failure(JevPasteError.noMatch), completion: completion)
+                    return
+                }
+
+                guard (start.confidence ?? 0) >= self.minimumConfidence,
+                      (end.confidence ?? 0) >= self.minimumConfidence
+                else {
+                    self.finish(.failure(JevPasteError.lowConfidence), completion: completion)
+                    return
+                }
+
+                guard let value = SelectionGeometry.exactSubstring(
+                    in: line.text,
+                    boundaries: boundaries,
+                    startID: start.choice,
+                    endID: end.choice
+                ), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else {
+                    self.finish(.failure(JevPasteError.invalidResponse), completion: completion)
+                    return
+                }
+
+                self.finish(.success(value), completion: completion)
+            }
+        }
+    }
+
+    private func state(
+        field: FocusedFieldContext,
+        source: Clip,
+        selectedLine: String?
+    ) -> JevRequest.State {
+        .init(
+            focusedField: .init(label: field.label, role: field.role, app: field.app),
+            clipboardItems: [
+                .init(
+                    id: "clipboard_0",
+                    sourceApp: source.sourceApp,
+                    content: source.text
+                )
+            ],
+            selectedLine: selectedLine
+        )
+    }
+
+    private func send(
+        _ requestBody: JevRequest,
+        apiKey: String,
+        completion: @escaping (Result<JevResponse, Error>) -> Void
+    ) {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try? JSONEncoder().encode(requestBody)
+
+        guard let body = try? JSONEncoder().encode(requestBody) else {
+            completion(.failure(JevPasteError.invalidResponse))
+            return
+        }
+        request.httpBody = body
 
         session.dataTask(with: request) { data, response, error in
-            let result: Result<String, Error>
             if let error {
-                result = .failure(error)
+                completion(.failure(error))
             } else if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                result = .failure(JevPasteError.http(http.statusCode))
+                completion(.failure(JevPasteError.http(http.statusCode)))
             } else if let data,
-                      let decoded = try? JSONDecoder().decode(JevResponse.self, from: data),
-                      let answer = decoded.answers["best_match"] {
-                if answer.choice == "no_match" {
-                    result = .failure(JevPasteError.noMatch)
-                } else if (answer.confidence ?? 0) < 0.55 {
-                    result = .failure(JevPasteError.lowConfidence)
-                } else if let candidate = indexedCandidates.first(where: { $0.0 == answer.choice })?.1 {
-                    result = .success(candidate.value)
-                } else {
-                    result = .failure(JevPasteError.invalidResponse)
-                }
+                      let decoded = try? JSONDecoder().decode(JevResponse.self, from: data) {
+                completion(.success(decoded))
             } else {
-                result = .failure(JevPasteError.invalidResponse)
+                completion(.failure(JevPasteError.invalidResponse))
             }
-            DispatchQueue.main.async { completion(result) }
         }.resume()
+    }
+
+    private func finish(
+        _ result: Result<String, Error>,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        DispatchQueue.main.async {
+            completion(result)
+        }
     }
 
     private func boundedContext(from clips: [Clip]) -> [Clip] {
@@ -137,6 +301,7 @@ private struct JevRequest: Encodable {
             let role: String
             let app: String
         }
+
         struct ClipboardItem: Encodable {
             let id: String
             let sourceApp: String
@@ -147,23 +312,15 @@ private struct JevRequest: Encodable {
                 case sourceApp = "source_app"
             }
         }
-        struct Candidate: Encodable {
-            let value: String
-            let clipboardItemID: String
 
-            enum CodingKeys: String, CodingKey {
-                case value
-                case clipboardItemID = "clipboard_item_id"
-            }
-        }
         let focusedField: Field
         let clipboardItems: [ClipboardItem]
-        let candidates: [String: Candidate]
+        let selectedLine: String?
 
         enum CodingKeys: String, CodingKey {
             case focusedField = "focused_field"
             case clipboardItems = "clipboard_items"
-            case candidates
+            case selectedLine = "selected_line"
         }
     }
 
@@ -183,5 +340,6 @@ private struct JevResponse: Decodable {
         let choice: String
         let confidence: Double?
     }
+
     let answers: [String: Answer]
 }
