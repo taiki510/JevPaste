@@ -78,7 +78,7 @@ The current clipboard is not used as the source for this shortcut. Profile Smart
 
 Jev makes the semantic decision, so the profile should provide enough context for Jev to distinguish similar values. The local app does not maintain a fixed list of profile fields.
 
-For profiles, backticks are recommended around values whose boundaries should be unambiguous, especially multi-word values:
+For profiles, half-width ASCII backticks are recommended around values whose boundaries should be unambiguous, especially multi-word values:
 
 ```text
 Full name `Jane Doe`
@@ -105,14 +105,14 @@ Street address `123 Example Street`
 Building and unit `Sample Building 305`
 ```
 
-The backticks are not pasted. They mark the enclosed text as one high-priority exact candidate. They are optional: ordinary whitespace-based and structured extraction still runs when no backticks are present.
+The ASCII backticks are grouping syntax and are never pasted. They mark the enclosed text as one complete high-priority candidate. The enclosed range is not separately split into ordinary token-span candidates, and ordinary candidates do not cross the grouped range. Only the half-width ASCII backtick character U+0060 has this special meaning; the full-width character `｀` is treated as ordinary text. Grouping is optional: ordinary whitespace-based and structured extraction still runs outside matched groups and when no matched ASCII backticks are present.
 
 These labels are examples, not built-in field definitions. Use labels that describe your own data clearly. Labels and values may be written in any language.
 
 ### Recommended Practices
 
 - Put one logical value on each line when practical.
-- Use backticks around multi-word or otherwise ambiguous values when you control the profile text.
+- Use half-width ASCII backticks around multi-word or otherwise ambiguous values when you control the profile text.
 - Give similar values distinct labels, such as `Phone (complete)` and `Phone (part 1)`.
 - Store every exact representation that a form may require.
 - Keep related fields near each other so their ordering provides additional context.
@@ -130,7 +130,7 @@ For multi-word values, the complete value must occur contiguously in the source.
 
 ### Explicit grouping across lines
 
-A matched backtick group may span a newline. This can be useful for a value intended for a multi-line text area:
+A matched ASCII-backtick group may span a newline. This can be useful for a value intended for a multi-line text area:
 
 ```text
 Mailing address `123 Example Street
@@ -143,7 +143,7 @@ The enclosed two-line text is one explicit candidate. Use this deliberately; mos
 
 The app mechanically enumerates exact substrings from lines, whitespace-delimited token spans, common delimiters, quoted values, quoted key/value pairs, and table-like text. Jev always receives the original complete source as the authoritative context.
 
-Colon-separated, tab-separated, CSV-like, simple quoted key-value, and unstructured whitespace-separated text can therefore work. Backticks are an additional author-controlled hint, not a requirement.
+Colon-separated, tab-separated, CSV-like, simple quoted key-value, and unstructured whitespace-separated text can therefore work. Matched ASCII backticks are an additional author-controlled grouping boundary, not a requirement.
 
 For the exact candidate generation and prioritization rules, see [Candidate Extraction Algorithm](CANDIDATE_EXTRACTION.md).
 
