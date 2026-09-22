@@ -33,13 +33,13 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         guard let source = boundedContext(from: clips).first else {
-            finish(.failure(JevPasteError.noMatch), completion: completion)
+            finish(.failure(JevPasteError.emptySource), completion: completion)
             return
         }
 
         let lines = SelectionGeometry.sourceLines(in: source.text)
         guard !lines.isEmpty else {
-            finish(.failure(JevPasteError.noMatch), completion: completion)
+            finish(.failure(JevPasteError.emptySource), completion: completion)
             return
         }
 
