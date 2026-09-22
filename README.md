@@ -66,7 +66,7 @@ JevPaste deliberately avoids local semantic parsing. It does not classify text a
 
 For a multi-line source, Jev first chooses the single line that contains the value for the focused field. For the selected line, JevPaste mechanically generates selectable text boundaries. A second Jev request chooses the start and end boundaries. JevPaste then slices the original line at those exact positions and inserts the resulting substring without generating, joining, or normalizing text.
 
-Boundary generation is lexical rather than semantic. Consecutive ASCII letters, consecutive ASCII digits, and consecutive whitespace are grouped into runs. ASCII punctuation and other symbols are separate units, while non-ASCII grapheme clusters are selectable one by one. This keeps ordinary English lines compact while retaining fine-grained selection for Japanese and other text that does not rely on spaces.
+Boundary generation is lexical rather than semantic. In ordinary ASCII-only text, consecutive ASCII letters and consecutive ASCII digits are grouped into runs, while punctuation remains separately selectable. Whitespace is grouped into runs. If a non-whitespace token contains any non-ASCII grapheme, every grapheme in that token—including adjacent ASCII characters—is selectable one by one. This keeps ordinary English lines compact while retaining fine-grained selection for Japanese and mixed-script text.
 
 For regular Smart Paste, only the clipboard contents present when `Command-J` is pressed are used. Older history entries are never included in the Jev request. The same copied text remains reusable until the clipboard changes.
 
