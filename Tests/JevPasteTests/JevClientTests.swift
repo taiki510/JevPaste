@@ -111,6 +111,23 @@ import Testing
     #expect(isNoMatch(result))
 }
 
+@Test func startNoMatchRemainsAuthoritative() {
+    let client = JevClient()
+    let line = "Order ID ABC123"
+    let boundaries = SelectionGeometry.boundaries(in: line)
+    let response = JevResponse(answers: [
+        "start_boundary": .init(choice: "no_match", confidence: 0.01),
+    ])
+
+    let result = client.startBoundaryResult(
+        response,
+        boundaries: boundaries,
+        requireLineMatch: false
+    )
+
+    #expect(isNoMatch(result))
+}
+
 @Test func boundaryDecisionsAcceptConcreteChoicesRegardlessOfConfidence() {
     let client = JevClient()
     let line = "Order ID ABC123"
@@ -169,8 +186,27 @@ import Testing
 
 @Test func noMatchIsSilentWhileOperationalErrorsRemainVisible() {
     #expect(!shouldPresentSmartPasteError(JevPasteError.noMatch))
+    #expect(shouldPresentSmartPasteError(JevPasteError.emptySource))
     #expect(shouldPresentSmartPasteError(JevPasteError.invalidResponse))
     #expect(shouldPresentSmartPasteError(URLError(.notConnectedToInternet)))
+}
+
+@Test func emptyLocalSourceIsNotSemanticNoMatch() async {
+    let client = JevClient(sendHandler: { _, _, completion in
+        completion(.failure(JevPasteError.invalidResponse))
+    })
+
+    let result: Result<String, Error> = await withCheckedContinuation { continuation in
+        client.choose(
+            field: focusedField(),
+            clips: [],
+            apiKey: "test-key"
+        ) { result in
+            continuation.resume(returning: result)
+        }
+    }
+
+    #expect(isEmptySource(result))
 }
 
 @Test func endDecisionRejectsBoundaryAtOrBeforeSelectedStart() {
@@ -270,6 +306,13 @@ private func isNoMatch<T>(_ result: Result<T, Error>) -> Bool {
     }
 }
 
+
+private func isEmptySource<T>(_ result: Result<T, Error>) -> Bool {
+    isPasteError(result) { error in
+        if case .emptySource = error { return true }
+        return false
+    }
+}
 
 private func isInvalidResponse<T>(_ result: Result<T, Error>) -> Bool {
     isPasteError(result) { error in
