@@ -62,13 +62,25 @@ import Testing
     ) == "100-0001")
 }
 
-@Test func previewsUseFullwidthBoundaryMarker() {
+@Test func previewsUseCollisionFreeBoundaryMarker() {
     let line = "Full Name John Smith"
+    let marker = SelectionGeometry.boundaryMarker(in: line)
     let boundary = SelectionGeometry.boundaries(in: line)
         .first { $0.characterOffset == 10 }!
 
-    #expect(boundary.preview == "Full Name ｜John Smith")
-    #expect(!boundary.preview.contains("|"))
+    #expect(marker == "[[JevPasteBoundary]]")
+    #expect(!line.contains(marker))
+    #expect(boundary.preview == "Full Name [[JevPasteBoundary]]John Smith")
+}
+
+@Test func boundaryMarkerChangesWhenTheSourceAlreadyContainsMarkerText() {
+    let line = "Label [[JevPasteBoundary]] value [[JevPasteBoundary_1]]"
+    let marker = SelectionGeometry.boundaryMarker(in: line)
+    let boundaries = SelectionGeometry.boundaries(in: line)
+
+    #expect(marker == "[[JevPasteBoundary_2]]")
+    #expect(!line.contains(marker))
+    #expect(boundaries.allSatisfy { $0.preview.contains(marker) })
 }
 
 @Test func boundaryEnumerationStopsOnceTheChoiceBudgetIsKnownToBeExceeded() {

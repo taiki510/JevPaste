@@ -14,7 +14,18 @@ struct TextBoundary {
 
 enum SelectionGeometry {
     static let maximumChoiceCount = 255
-    static let boundaryMarker = "｜"
+
+    static func boundaryMarker(in line: String) -> String {
+        let base = "[[JevPasteBoundary]]"
+        guard line.contains(base) else { return base }
+
+        var suffix = 1
+        while true {
+            let candidate = "[[JevPasteBoundary_\(suffix)]]"
+            if !line.contains(candidate) { return candidate }
+            suffix += 1
+        }
+    }
 
     static func sourceLines(in text: String) -> [SourceLine] {
         text.split(whereSeparator: \Character.isNewline)
@@ -25,6 +36,7 @@ enum SelectionGeometry {
     }
 
     static func boundaries(in line: String) -> [TextBoundary] {
+        let marker = boundaryMarker(in: line)
         var indices: [String.Index] = [line.startIndex]
         var cursor = line.startIndex
 
@@ -76,7 +88,7 @@ enum SelectionGeometry {
                 id: "boundary_\(offset)",
                 index: index,
                 characterOffset: line.distance(from: line.startIndex, to: index),
-                preview: preview(in: line, at: index)
+                preview: preview(in: line, at: index, marker: marker)
             )
         }
     }
@@ -125,13 +137,18 @@ enum SelectionGeometry {
         character.unicodeScalars.count == 1 && character.unicodeScalars.first?.isASCII == true
     }
 
-    private static func preview(in line: String, at index: String.Index, radius: Int = 24) -> String {
+    private static func preview(
+        in line: String,
+        at index: String.Index,
+        marker: String,
+        radius: Int = 24
+    ) -> String {
         let left = line[..<index]
         let right = line[index...]
         let leftText = String(left.suffix(radius))
         let rightText = String(right.prefix(radius))
         let leftPrefix = left.count > radius ? "…" : ""
         let rightSuffix = right.count > radius ? "…" : ""
-        return "\(leftPrefix)\(leftText)\(boundaryMarker)\(rightText)\(rightSuffix)"
+        return "\(leftPrefix)\(leftText)\(marker)\(rightText)\(rightSuffix)"
     }
 }

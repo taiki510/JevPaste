@@ -116,7 +116,7 @@ For example, if a profile stores separate family and given names but never conta
 
 ## How Selection Works
 
-For a source with multiple non-empty lines, JevPaste first asks Jev which single line contains the value requested by the focused field. A one-line source skips this request.
+For a source with multiple non-empty lines, JevPaste first asks Jev which single line contains the value requested by the focused field. A one-line source skips that separate request, but the range-selection request still asks Jev explicitly whether the line contains an appropriate exact value.
 
 JevPaste then creates selectable boundaries within the chosen line without trying to understand what the text means. In ASCII-only non-whitespace text, consecutive letters and consecutive digits form runs while punctuation remains separately selectable. Whitespace forms runs. If a non-whitespace token contains any non-ASCII grapheme, every grapheme in that token—including adjacent ASCII characters—is selectable one by one. The boundaries between those units, plus the beginning and end of the line, become choices.
 
@@ -132,7 +132,7 @@ is mechanically segmented approximately as:
 ｜Name｜ ｜John｜ ｜Smith｜,｜ ｜郵｜便｜番｜号｜1｜0｜0｜-｜0｜0｜0｜1｜
 ```
 
-The full-width `｜` characters above are explanatory boundary markers and are not inserted into the source. Jev chooses one start boundary and one end boundary in the same request. JevPaste then slices the untouched source line between those two positions.
+The full-width `｜` characters above are only explanatory separators. In the actual Jev criteria, JevPaste inserts a marker such as `[[JevPasteBoundary]]` and first ensures that the chosen marker does not occur anywhere in the selected source line. Jev chooses one start boundary and one end boundary in the same request. JevPaste then slices the untouched source line between those two positions.
 
 This design avoids local rules such as deciding whether a colon belongs to a URL, whether a hyphen belongs to a phone number, or how many words make up a name.
 
@@ -142,7 +142,7 @@ See [Smart Paste Selection](SELECTION.md) for the precise algorithm and limits.
 
 A Smart Paste operation sends the focused field context and the bounded active source.
 
-For multi-line input, the first request includes choices for the non-empty source lines. The second request includes the selected line and its boundary choices. For a one-line source, only the boundary-selection request is needed.
+For multi-line input, the first request includes choices for the non-empty source lines. The second request includes the selected line and its boundary choices. For a one-line source, only the range-selection request is needed, and that request includes an explicit match/no-match question alongside the start and end boundary questions.
 
 Each question reserves `no_match` as a choice. The current implementation allows at most 255 choices per question, so at most 254 real line or boundary choices can be sent. Inputs over that limit are rejected instead of being semantically shortened or partially enumerated.
 

@@ -20,7 +20,7 @@ For a multi-line source:
 5. Validate the range locally.
 6. Slice the original line at those exact indices and insert the result.
 
-For a one-line source, step 2 is skipped.
+For a one-line source, the separate line-selection request in step 2 is skipped. The boundary-selection request still includes an explicit match/no-match question so a one-line source is never assumed to contain a suitable value.
 
 Values that span multiple source lines are intentionally unsupported. JevPaste is primarily a web-form input tool, and requiring a pasteable value to exist on one line keeps both the interaction and failure modes substantially simpler.
 
@@ -101,14 +101,16 @@ This keeps ordinary English text compact while preserving character-level precis
 
 Boundary IDs such as `boundary_12` are the actual choices returned by Jev.
 
-For readability, criteria include a short preview with an inserted full-width vertical bar `｜` marking the boundary. The marker is not part of the source text and is never pasted.
+For readability, criteria include a short preview with an inserted marker such as `[[JevPasteBoundary]]`. Before building previews, JevPaste chooses a marker string that does not occur anywhere in the selected source line. If the base marker already appears in the source, a numeric suffix is incremented until a collision-free marker is found. The marker is not part of the source text and is never pasted.
 
-Jev receives two independent questions in the same request:
+Jev receives two independent boundary questions in the same request:
 
 - `start_boundary`: choose the boundary immediately before the first character of the complete value
 - `end_boundary`: choose the boundary immediately after the last character of the complete value
 
-The local app accepts the result only when both choices have sufficient confidence and the start index precedes the end index.
+For a one-line source, the same request also includes `line_match`, which explicitly asks whether that line contains any complete exact value appropriate for the focused field. This preserves the no-match decision while avoiding a separate line-selection request.
+
+Each returned decision must independently meet the configured confidence threshold. The local app also requires the start index to precede the end index.
 
 ## Exact Source Preservation
 

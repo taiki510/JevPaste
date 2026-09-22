@@ -38,6 +38,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
                 source: source,
                 field: field,
                 apiKey: apiKey,
+                requireLineMatch: true,
                 completion: completion
             )
             return
@@ -62,6 +63,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
                     source: source,
                     field: field,
                     apiKey: apiKey,
+                    requireLineMatch: false,
                     completion: completion
                 )
             case .failure(let error):
@@ -126,6 +128,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         source: Clip,
         field: FocusedFieldContext,
         apiKey: String,
+        requireLineMatch: Bool,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         let boundaries = SelectionGeometry.boundaries(in: line.text)
@@ -134,29 +137,15 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             return
         }
 
-        var criteria = Dictionary(uniqueKeysWithValues: boundaries.map {
-            (
-                $0.id,
-                "Boundary at character offset \($0.characterOffset). The inserted full-width marker ｜ shows the boundary: \($0.preview)"
-            )
-        })
-        criteria["no_match"] = "No valid boundary can represent the requested exact value."
-
+        let boundaryMarker = SelectionGeometry.boundaryMarker(in: line.text)
         let request = JevRequest(
             model: "jev-latest",
             state: state(field: field, source: source, selectedLine: line.text),
-            questions: [
-                "start_boundary": .init(
-                    type: "choice",
-                    instructions: "The selected_line contains the value for focused_field. Choose the boundary immediately before the first character of the complete exact value. The full-width ｜ character shown in each criterion is an inserted display marker, not source text. Do not include a label or unrelated prefix unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if no boundary is appropriate.",
-                    criteria: criteria
-                ),
-                "end_boundary": .init(
-                    type: "choice",
-                    instructions: "The selected_line contains the value for focused_field. Choose the boundary immediately after the last character of the complete exact value. The full-width ｜ character shown in each criterion is an inserted display marker, not source text. Do not include unrelated suffix text or punctuation unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if no boundary is appropriate.",
-                    criteria: criteria
-                )
-            ]
+            questions: Self.rangeQuestions(
+                boundaries: boundaries,
+                boundaryMarker: boundaryMarker,
+                requireLineMatch: requireLineMatch
+            )
         )
 
         send(request, apiKey: apiKey) { [weak self] result in
@@ -165,39 +154,107 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             case .failure(let error):
                 self.finish(.failure(error), completion: completion)
             case .success(let response):
-                guard let start = response.answers["start_boundary"],
-                      let end = response.answers["end_boundary"]
-                else {
-                    self.finish(.failure(JevPasteError.invalidResponse), completion: completion)
-                    return
-                }
-
-                guard start.choice != "no_match", end.choice != "no_match" else {
-                    self.finish(.failure(JevPasteError.noMatch), completion: completion)
-                    return
-                }
-
-                guard (start.confidence ?? 0) >= self.minimumConfidence,
-                      (end.confidence ?? 0) >= self.minimumConfidence
-                else {
-                    self.finish(.failure(JevPasteError.lowConfidence), completion: completion)
-                    return
-                }
-
-                guard let value = SelectionGeometry.exactSubstring(
-                    in: line.text,
-                    boundaries: boundaries,
-                    startID: start.choice,
-                    endID: end.choice
-                ), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                else {
-                    self.finish(.failure(JevPasteError.invalidResponse), completion: completion)
-                    return
-                }
-
-                self.finish(.success(value), completion: completion)
+                self.finish(
+                    self.rangeResult(
+                        response,
+                        in: line.text,
+                        boundaries: boundaries,
+                        requireLineMatch: requireLineMatch
+                    ),
+                    completion: completion
+                )
             }
         }
+    }
+
+    static func rangeQuestions(
+        boundaries: [TextBoundary],
+        boundaryMarker: String,
+        requireLineMatch: Bool
+    ) -> [String: JevRequest.Question] {
+        var criteria = Dictionary(uniqueKeysWithValues: boundaries.map {
+            (
+                $0.id,
+                "Boundary at character offset \($0.characterOffset). The inserted marker \(boundaryMarker) shows the boundary: \($0.preview)"
+            )
+        })
+        criteria["no_match"] = "No valid boundary can represent the requested exact value."
+
+        var questions: [String: JevRequest.Question] = [
+            "start_boundary": .init(
+                type: "choice",
+                instructions: "Inspect selected_line for a complete exact value appropriate for focused_field. If such a value exists, choose the boundary immediately before its first character. The marker \(boundaryMarker) shown in each criterion is inserted only for display and is guaranteed not to occur in selected_line. Do not include a label or unrelated prefix unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if selected_line contains no appropriate exact value or no boundary is appropriate.",
+                criteria: criteria
+            ),
+            "end_boundary": .init(
+                type: "choice",
+                instructions: "Inspect selected_line for a complete exact value appropriate for focused_field. If such a value exists, choose the boundary immediately after its last character. The marker \(boundaryMarker) shown in each criterion is inserted only for display and is guaranteed not to occur in selected_line. Do not include unrelated suffix text or punctuation unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if selected_line contains no appropriate exact value or no boundary is appropriate.",
+                criteria: criteria
+            ),
+        ]
+
+        if requireLineMatch {
+            questions["line_match"] = .init(
+                type: "choice",
+                instructions: "Decide whether selected_line contains a complete exact value appropriate for focused_field. Do not assume a match exists merely because the source has only one non-empty line. Choose match only when the value occurs contiguously in selected_line without combining, transforming, normalizing, or generating text. Otherwise choose no_match.",
+                criteria: [
+                    "match": "selected_line contains a complete exact value appropriate for focused_field.",
+                    "no_match": "selected_line does not contain any complete exact value appropriate for focused_field.",
+                ]
+            )
+        }
+
+        return questions
+    }
+
+    func rangeResult(
+        _ response: JevResponse,
+        in line: String,
+        boundaries: [TextBoundary],
+        requireLineMatch: Bool
+    ) -> Result<String, Error> {
+        if requireLineMatch {
+            guard let lineMatch = response.answers["line_match"] else {
+                return .failure(JevPasteError.invalidResponse)
+            }
+            guard lineMatch.choice != "no_match" else {
+                return .failure(JevPasteError.noMatch)
+            }
+            guard lineMatch.choice == "match" else {
+                return .failure(JevPasteError.invalidResponse)
+            }
+            guard (lineMatch.confidence ?? 0) >= minimumConfidence else {
+                return .failure(JevPasteError.lowConfidence)
+            }
+        }
+
+        guard let start = response.answers["start_boundary"],
+              let end = response.answers["end_boundary"]
+        else {
+            return .failure(JevPasteError.invalidResponse)
+        }
+
+        guard start.choice != "no_match", end.choice != "no_match" else {
+            return .failure(JevPasteError.noMatch)
+        }
+
+        guard (start.confidence ?? 0) >= minimumConfidence,
+              (end.confidence ?? 0) >= minimumConfidence
+        else {
+            return .failure(JevPasteError.lowConfidence)
+        }
+
+        guard let value = SelectionGeometry.exactSubstring(
+            in: line,
+            boundaries: boundaries,
+            startID: start.choice,
+            endID: end.choice
+        ), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return .failure(JevPasteError.invalidResponse)
+        }
+
+        return .success(value)
     }
 
     private func state(
@@ -294,7 +351,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
     }
 }
 
-private struct JevRequest: Encodable {
+struct JevRequest: Encodable {
     struct State: Encodable {
         struct Field: Encodable {
             let label: String
@@ -335,7 +392,7 @@ private struct JevRequest: Encodable {
     let questions: [String: Question]
 }
 
-private struct JevResponse: Decodable {
+struct JevResponse: Decodable {
     struct Answer: Decodable {
         let choice: String
         let confidence: Double?
