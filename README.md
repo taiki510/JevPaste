@@ -64,7 +64,7 @@ See the [complete usage guide](docs/USAGE.md) for setup, profile-writing recomme
 
 JevPaste deliberately avoids local semantic parsing. It does not classify text as names, addresses, phone numbers, URLs, or other domain-specific types.
 
-For a multi-line source, Jev first chooses the single line that contains the value for the focused field. For the selected line, JevPaste mechanically generates selectable text boundaries. A second Jev request chooses the start and end boundaries. JevPaste then slices the original line at those exact positions and inserts the resulting substring without generating, joining, or normalizing text.
+For a multi-line source, Jev first chooses the single line that contains the value for the focused field. For the selected line, JevPaste mechanically generates selectable text boundaries. Jev then chooses the start boundary. A following request receives that fixed start position and chooses only among later end boundaries. JevPaste then slices the original line at those exact positions and inserts the resulting substring without generating, joining, or normalizing text.
 
 Boundary generation is lexical rather than semantic. In ordinary ASCII-only text, consecutive ASCII letters and consecutive ASCII digits are grouped into runs, while punctuation remains separately selectable. Whitespace is grouped into runs. If a non-whitespace token contains any non-ASCII grapheme, every grapheme in that token—including adjacent ASCII characters—is selectable one by one. This keeps ordinary English lines compact while retaining fine-grained selection for Japanese and mixed-script text.
 

@@ -1,8 +1,15 @@
 import Foundation
 
 final class JevClient: NSObject, URLSessionTaskDelegate {
+    typealias SendHandler = (
+        JevRequest,
+        String,
+        @escaping (Result<JevResponse, Error>) -> Void
+    ) -> Void
+
     private let endpoint = URL(string: "https://api.typesafe.ai/v1/systemone")!
     private let minimumConfidence = 0.55
+    private let sendHandler: SendHandler?
 
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -14,6 +21,11 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         configuration.timeoutIntervalForResource = 15
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
+
+    init(sendHandler: SendHandler? = nil) {
+        self.sendHandler = sendHandler
+        super.init()
+    }
 
     func choose(
         field: FocusedFieldContext,
@@ -86,11 +98,16 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
 
         let request = JevRequest(
             model: "jev-latest",
-            state: state(field: field, source: source, selectedLine: nil),
+            state: state(
+                field: field,
+                source: source,
+                selectedLine: nil,
+                selectedStartOffset: nil
+            ),
             questions: [
                 "source_line": .init(
                     type: "choice",
-                    instructions: "Choose the single source line that contains the exact value that should be inserted into focused_field. Use the complete source text for context. Do not infer or construct a value across multiple lines. The selected line may contain labels, punctuation, or other surrounding text; a later step will select the exact range within it. Choose no_match when no single line contains an appropriate exact value.",
+                    instructions: "Choose the single source line that contains the exact value that should be inserted into focused_field. Use the complete source text for context. Do not infer or construct a value across multiple lines. The selected line may contain labels, punctuation, or other surrounding text; later steps will select the exact range within it. Choose no_match when no single line contains an appropriate exact value.",
                     criteria: criteria
                 )
             ]
@@ -102,25 +119,28 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             case .failure(let error):
                 completion(.failure(error))
             case .success(let response):
-                guard let answer = response.answers["source_line"] else {
-                    completion(.failure(JevPasteError.invalidResponse))
-                    return
-                }
-                guard answer.choice != "no_match" else {
-                    completion(.failure(JevPasteError.noMatch))
-                    return
-                }
-                guard (answer.confidence ?? 0) >= self.minimumConfidence else {
-                    completion(.failure(JevPasteError.lowConfidence))
-                    return
-                }
-                guard let line = lines.first(where: { $0.id == answer.choice }) else {
-                    completion(.failure(JevPasteError.invalidResponse))
-                    return
-                }
-                completion(.success(line))
+                completion(self.lineResult(response, lines: lines))
             }
         }
+    }
+
+    func lineResult(
+        _ response: JevResponse,
+        lines: [SourceLine]
+    ) -> Result<SourceLine, Error> {
+        guard let answer = response.answers["source_line"] else {
+            return .failure(JevPasteError.invalidResponse)
+        }
+        guard answer.choice != "no_match" else {
+            return .failure(JevPasteError.noMatch)
+        }
+        guard (answer.confidence ?? 0) >= minimumConfidence else {
+            return .failure(JevPasteError.lowConfidence)
+        }
+        guard let line = lines.first(where: { $0.id == answer.choice }) else {
+            return .failure(JevPasteError.invalidResponse)
+        }
+        return .success(line)
     }
 
     private func chooseRange(
@@ -140,8 +160,13 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         let boundaryMarker = SelectionGeometry.boundaryMarker(in: line.text)
         let request = JevRequest(
             model: "jev-latest",
-            state: state(field: field, source: source, selectedLine: line.text),
-            questions: Self.rangeQuestions(
+            state: state(
+                field: field,
+                source: source,
+                selectedLine: line.text,
+                selectedStartOffset: nil
+            ),
+            questions: Self.startQuestions(
                 boundaries: boundaries,
                 boundaryMarker: boundaryMarker,
                 requireLineMatch: requireLineMatch
@@ -154,12 +179,66 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             case .failure(let error):
                 self.finish(.failure(error), completion: completion)
             case .success(let response):
+                switch self.startBoundaryResult(
+                    response,
+                    boundaries: boundaries,
+                    requireLineMatch: requireLineMatch
+                ) {
+                case .failure(let error):
+                    self.finish(.failure(error), completion: completion)
+                case .success(let startBoundary):
+                    self.chooseEndBoundary(
+                        in: line,
+                        source: source,
+                        field: field,
+                        apiKey: apiKey,
+                        boundaries: boundaries,
+                        boundaryMarker: boundaryMarker,
+                        startBoundary: startBoundary,
+                        completion: completion
+                    )
+                }
+            }
+        }
+    }
+
+    private func chooseEndBoundary(
+        in line: SourceLine,
+        source: Clip,
+        field: FocusedFieldContext,
+        apiKey: String,
+        boundaries: [TextBoundary],
+        boundaryMarker: String,
+        startBoundary: TextBoundary,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let request = JevRequest(
+            model: "jev-latest",
+            state: state(
+                field: field,
+                source: source,
+                selectedLine: line.text,
+                selectedStartOffset: startBoundary.characterOffset
+            ),
+            questions: Self.endQuestions(
+                boundaries: boundaries,
+                startBoundary: startBoundary,
+                boundaryMarker: boundaryMarker
+            )
+        )
+
+        send(request, apiKey: apiKey) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                self.finish(.failure(error), completion: completion)
+            case .success(let response):
                 self.finish(
-                    self.rangeResult(
+                    self.endResult(
                         response,
                         in: line.text,
                         boundaries: boundaries,
-                        requireLineMatch: requireLineMatch
+                        startBoundary: startBoundary
                     ),
                     completion: completion
                 )
@@ -167,7 +246,7 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         }
     }
 
-    static func rangeQuestions(
+    static func startQuestions(
         boundaries: [TextBoundary],
         boundaryMarker: String,
         requireLineMatch: Bool
@@ -178,19 +257,14 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
                 "Boundary at character offset \($0.characterOffset). The inserted marker \(boundaryMarker) shows the boundary: \($0.preview)"
             )
         })
-        criteria["no_match"] = "No valid boundary can represent the requested exact value."
+        criteria["no_match"] = "No valid start boundary can represent the requested exact value."
 
         var questions: [String: JevRequest.Question] = [
             "start_boundary": .init(
                 type: "choice",
-                instructions: "Inspect selected_line for a complete exact value appropriate for focused_field. If such a value exists, choose the boundary immediately before its first character. The marker \(boundaryMarker) shown in each criterion is inserted only for display and is guaranteed not to occur in selected_line. Do not include a label or unrelated prefix unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if selected_line contains no appropriate exact value or no boundary is appropriate.",
+                instructions: "Inspect selected_line for a complete exact value appropriate for focused_field. If such a value exists, choose the boundary immediately before its first character. The marker \(boundaryMarker) shown in each criterion is inserted only for display and is guaranteed not to occur in selected_line. Do not include a label or unrelated prefix unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if selected_line contains no appropriate exact value or no start boundary is appropriate.",
                 criteria: criteria
-            ),
-            "end_boundary": .init(
-                type: "choice",
-                instructions: "Inspect selected_line for a complete exact value appropriate for focused_field. If such a value exists, choose the boundary immediately after its last character. The marker \(boundaryMarker) shown in each criterion is inserted only for display and is guaranteed not to occur in selected_line. Do not include unrelated suffix text or punctuation unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if selected_line contains no appropriate exact value or no boundary is appropriate.",
-                criteria: criteria
-            ),
+            )
         ]
 
         if requireLineMatch {
@@ -207,12 +281,34 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         return questions
     }
 
-    func rangeResult(
+    static func endQuestions(
+        boundaries: [TextBoundary],
+        startBoundary: TextBoundary,
+        boundaryMarker: String
+    ) -> [String: JevRequest.Question] {
+        let validEnds = boundaries.filter { $0.index > startBoundary.index }
+        var criteria = Dictionary(uniqueKeysWithValues: validEnds.map {
+            (
+                $0.id,
+                "End boundary at character offset \($0.characterOffset). The inserted marker \(boundaryMarker) shows this candidate end: \($0.preview)"
+            )
+        })
+        criteria["no_match"] = "No valid end boundary completes an appropriate exact value from the fixed start boundary."
+
+        return [
+            "end_boundary": .init(
+                type: "choice",
+                instructions: "The start of the value is already fixed at character offset \(startBoundary.characterOffset), shown here: \(startBoundary.preview). Choose the boundary immediately after the last character of the complete exact value that begins at exactly that fixed start. Do not switch to a different occurrence or a different value elsewhere in selected_line. The marker \(boundaryMarker) is inserted only for display and is guaranteed not to occur in selected_line. Do not include unrelated suffix text or punctuation unless it is genuinely part of the value. Do not transform, normalize, or generate text. Choose no_match if no offered end boundary completes an appropriate exact value from the fixed start.",
+                criteria: criteria
+            )
+        ]
+    }
+
+    func startBoundaryResult(
         _ response: JevResponse,
-        in line: String,
         boundaries: [TextBoundary],
         requireLineMatch: Bool
-    ) -> Result<String, Error> {
+    ) -> Result<TextBoundary, Error> {
         if requireLineMatch {
             guard let lineMatch = response.answers["line_match"] else {
                 return .failure(JevPasteError.invalidResponse)
@@ -228,39 +324,60 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
             }
         }
 
-        guard let start = response.answers["start_boundary"],
-              let end = response.answers["end_boundary"]
-        else {
+        guard let start = response.answers["start_boundary"] else {
             return .failure(JevPasteError.invalidResponse)
         }
-
-        guard start.choice != "no_match", end.choice != "no_match" else {
+        guard start.choice != "no_match" else {
             return .failure(JevPasteError.noMatch)
         }
-
-        guard (start.confidence ?? 0) >= minimumConfidence,
-              (end.confidence ?? 0) >= minimumConfidence
-        else {
+        guard (start.confidence ?? 0) >= minimumConfidence else {
             return .failure(JevPasteError.lowConfidence)
         }
-
-        guard let value = SelectionGeometry.exactSubstring(
-            in: line,
-            boundaries: boundaries,
-            startID: start.choice,
-            endID: end.choice
-        ), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let boundary = boundaries.first(where: { $0.id == start.choice }),
+              let finalBoundary = boundaries.last,
+              boundary.index < finalBoundary.index
         else {
             return .failure(JevPasteError.invalidResponse)
         }
+        return .success(boundary)
+    }
 
+    func endResult(
+        _ response: JevResponse,
+        in line: String,
+        boundaries: [TextBoundary],
+        startBoundary: TextBoundary
+    ) -> Result<String, Error> {
+        guard let end = response.answers["end_boundary"] else {
+            return .failure(JevPasteError.invalidResponse)
+        }
+        guard end.choice != "no_match" else {
+            return .failure(JevPasteError.noMatch)
+        }
+        guard (end.confidence ?? 0) >= minimumConfidence else {
+            return .failure(JevPasteError.lowConfidence)
+        }
+        guard let endBoundary = boundaries.first(where: {
+            $0.id == end.choice && $0.index > startBoundary.index
+        }),
+              let value = SelectionGeometry.exactSubstring(
+                in: line,
+                boundaries: boundaries,
+                startID: startBoundary.id,
+                endID: endBoundary.id
+              ),
+              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return .failure(JevPasteError.invalidResponse)
+        }
         return .success(value)
     }
 
     private func state(
         field: FocusedFieldContext,
         source: Clip,
-        selectedLine: String?
+        selectedLine: String?,
+        selectedStartOffset: Int?
     ) -> JevRequest.State {
         .init(
             focusedField: .init(label: field.label, role: field.role, app: field.app),
@@ -271,7 +388,8 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
                     content: source.text
                 )
             ],
-            selectedLine: selectedLine
+            selectedLine: selectedLine,
+            selectedStartOffset: selectedStartOffset
         )
     }
 
@@ -280,6 +398,11 @@ final class JevClient: NSObject, URLSessionTaskDelegate {
         apiKey: String,
         completion: @escaping (Result<JevResponse, Error>) -> Void
     ) {
+        if let sendHandler {
+            sendHandler(requestBody, apiKey, completion)
+            return
+        }
+
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -373,11 +496,13 @@ struct JevRequest: Encodable {
         let focusedField: Field
         let clipboardItems: [ClipboardItem]
         let selectedLine: String?
+        let selectedStartOffset: Int?
 
         enum CodingKeys: String, CodingKey {
             case focusedField = "focused_field"
             case clipboardItems = "clipboard_items"
             case selectedLine = "selected_line"
+            case selectedStartOffset = "selected_start_offset"
         }
     }
 

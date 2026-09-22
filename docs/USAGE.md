@@ -132,7 +132,7 @@ is mechanically segmented approximately as:
 ｜Name｜ ｜John｜ ｜Smith｜,｜ ｜郵｜便｜番｜号｜1｜0｜0｜-｜0｜0｜0｜1｜
 ```
 
-The full-width `｜` characters above are only explanatory separators. In the actual Jev criteria, JevPaste inserts a marker such as `[[JevPasteBoundary]]` and first ensures that the chosen marker does not occur anywhere in the selected source line. Jev chooses one start boundary and one end boundary in the same request. JevPaste then slices the untouched source line between those two positions.
+The full-width `｜` characters above are only explanatory separators. In the actual Jev criteria, JevPaste inserts a marker such as `[[JevPasteBoundary]]` and first ensures that the chosen marker does not occur anywhere in the selected source line. Jev first chooses the start boundary. JevPaste then sends that fixed start position in a second request whose end-boundary choices are limited to positions after the start. JevPaste slices the untouched source line between the two accepted positions.
 
 This design avoids local rules such as deciding whether a colon belongs to a URL, whether a hyphen belongs to a phone number, or how many words make up a name.
 
@@ -142,7 +142,7 @@ See [Smart Paste Selection](SELECTION.md) for the precise algorithm and limits.
 
 A Smart Paste operation sends the focused field context and the bounded active source.
 
-For multi-line input, the first request includes choices for the non-empty source lines. The second request includes the selected line and its boundary choices. For a one-line source, only the range-selection request is needed, and that request includes an explicit match/no-match question alongside the start and end boundary questions.
+For multi-line input, the first request chooses among the non-empty source lines, the second chooses the start boundary, and the third receives that fixed start position and chooses the end boundary from later positions only. For a one-line source, line selection is skipped: the first request combines the explicit match/no-match decision with start-boundary selection, and the second chooses the dependent end boundary.
 
 Each question reserves `no_match` as a choice. The current implementation allows at most 255 choices per question, so at most 254 real line or boundary choices can be sent. Inputs over that limit are rejected instead of being semantically shortened or partially enumerated.
 
