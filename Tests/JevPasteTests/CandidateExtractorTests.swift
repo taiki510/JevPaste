@@ -48,6 +48,39 @@ import Testing
     #expect(candidates.first?.kind == .explicitGroup)
 }
 
+@Test func asciiBackticksCreateExclusiveCandidateBoundaries() {
+    let text = "Prefix Alpha `John Smith` Suffix Omega"
+    let candidates = CandidateExtractor.extract(from: [clip(text)])
+    let values = candidates.map(\.value)
+
+    #expect(candidates.first?.value == "John Smith")
+    #expect(candidates.first?.kind == .explicitGroup)
+    #expect(!values.contains("John"))
+    #expect(!values.contains("Smith"))
+    #expect(!values.contains(where: { $0.contains("`") }))
+    #expect(!values.contains(where: { $0.contains("Alpha") && $0.contains("Suffix") }))
+}
+
+@Test func fullwidthBackticksRemainOrdinaryText() {
+    let text = "Full Name ｀John Smith｀"
+    let candidates = CandidateExtractor.extract(from: [clip(text)])
+    let values = candidates.map(\.value)
+
+    #expect(!candidates.contains(where: { $0.kind == .explicitGroup }))
+    #expect(values.contains("｀John Smith｀"))
+}
+
+@Test func oversizedBacktickGroupIsStillExcludedFromOrdinaryExtraction() {
+    let groupedValue = String(repeating: "a", count: 501)
+    let candidates = CandidateExtractor.extract(
+        from: [clip("Label `\(groupedValue)` Tail")]
+    )
+    let values = candidates.map(\.value)
+
+    #expect(!values.contains(groupedValue))
+    #expect(!values.contains(where: { $0.contains("`") }))
+}
+
 @Test func clearStructuralSeparatorsStillProduceWholeValues() {
     let text = "Full Name: John Smith\nCompany=Acme Holdings LLC\nCity\tNew York"
     let candidates = CandidateExtractor.extract(from: [clip(text)])
